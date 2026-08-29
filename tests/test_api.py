@@ -4,24 +4,12 @@ These use a TestClient against a temp database with the app's own dependency
 overrides, so routing, validation and serialisation are all exercised.
 """
 import pytest
-from fastapi.testclient import TestClient
-
-from app.main import app
-from app.database import get_db
 
 
 @pytest.fixture(autouse=True)
 def _no_startup_seed(monkeypatch):
     """The `db` fixture already seeds; stop startup from touching the real DB."""
     monkeypatch.setattr("app.main.init_db", lambda: None)
-
-
-@pytest.fixture
-def client(db):
-    app.dependency_overrides[get_db] = lambda: db
-    with TestClient(app) as c:
-        yield c
-    app.dependency_overrides.clear()
 
 
 # ------------------------------------------------------------------ catalog
@@ -226,10 +214,14 @@ def test_audit_api_exposes_no_write_route(client):
 
 
 # ------------------------------------------------------------- merchant API
-def test_rejecting_an_opportunity_stops_the_agent_offering_it(client):
-    """US-5b: only merchant-approved pairings may reach a buyer."""
-    for opportunity in client.get("/merchant/opportunities").json():
-        client.post(f"/merchant/opportunities/{opportunity['id']}/reject")
+def test_rejecting_an_opportunity_stops_the_agent_offering_it(client, merchant_client):
+    """US-5b: only merchant-approved pairings may reach a buyer.
+
+    Note the two clients: the merchant rejects the pairings, and a *separate*
+    signed-in buyer then shops. Neither can perform the other's action.
+    """
+    for opportunity in merchant_client.get("/merchant/opportunities").json():
+        merchant_client.post(f"/merchant/opportunities/{opportunity['id']}/reject")
 
     body = client.post(
         "/buyer/shop",
@@ -238,10 +230,10 @@ def test_rejecting_an_opportunity_stops_the_agent_offering_it(client):
     assert body["bundle"]["offered"] is False
 
 
-def test_merchant_metrics_report_completed_orders(client):
+def test_merchant_metrics_report_completed_orders(client, merchant_client):
     client.post("/buyer/shop",
                 json={"query": "Buy me a braided aux cable for my headphones, budget Rs 1000"})
-    metrics = client.get("/merchant/metrics").json()
+    metrics = merchant_client.get("/merchant/metrics").json()
     assert metrics["orders_completed"] == 1
     assert metrics["revenue"] == 29_900
 

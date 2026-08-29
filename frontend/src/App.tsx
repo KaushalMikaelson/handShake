@@ -1,84 +1,69 @@
-import { NavLink, Navigate, Route, Routes } from "react-router-dom";
-import { useEffect, useState } from "react";
-import { api, type SystemStatus } from "./services/api";
+import { useCallback, useEffect, useState } from "react";
+import { Navigate, Route, Routes, useLocation } from "react-router-dom";
+import { useAuth } from "./context/AuthContext";
+import { AppShell } from "./components/AppShell";
+import { Spinner } from "./components/ui";
+import { api } from "./services/api";
+import LoginPage from "./pages/LoginPage";
 import BuyerPage from "./pages/BuyerPage";
 import MerchantPage from "./pages/MerchantPage";
 import ApprovalsPage from "./pages/ApprovalsPage";
 import AuditPage from "./pages/AuditPage";
-import { Pill } from "./components/ui";
-
-const TABS = [
-  { to: "/buyer", label: "Buyer" },
-  { to: "/approvals", label: "Approvals" },
-  { to: "/merchant", label: "Merchant" },
-  { to: "/audit", label: "Audit Trail" },
-];
 
 export default function App() {
-  const [status, setStatus] = useState<SystemStatus | null>(null);
+  const { user, loading, can } = useAuth();
+  const [pending, setPending] = useState(0);
+  const location = useLocation();
 
-  useEffect(() => {
-    api.systemStatus().then(setStatus).catch(() => setStatus(null));
-  }, []);
+  // Keep the sidebar badge honest: refresh the pending count on navigation and
+  // whenever a screen reports that it changed something.
+  const refreshPending = useCallback(() => {
+    if (!user || !can("approvals")) return;
+    api
+      .approvals()
+      .then((list) => setPending(list.filter((a) => a.status === "PENDING").length))
+      .catch(() => undefined);
+  }, [user, can]);
+
+  useEffect(refreshPending, [refreshPending, location.pathname]);
+
+  // Boot: don't flash the login page while the session check is in flight.
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="flex items-center gap-2 text-sm text-subtle">
+          <Spinner />
+          Restoring session…
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) return <LoginPage />;
+
+  // Land each role somewhere it is actually allowed to be.
+  const home = can("buyer") ? "/buyer" : can("merchant") ? "/merchant" : "/audit";
 
   return (
-    <div className="min-h-screen">
-      <header className="border-b border-edge bg-panel/60 backdropblur">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-4 px-5 py-3">
-          <div className="mr-auto">
-            <h1 className="text-sm font-semibold text-slate-100">Bounded AI-to-AI Commerce</h1>
-            <p className="text-[11px] text-muted">
-              Buyer Agent × Merchant Growth Agent, gated by a deterministic policy engine
-            </p>
-          </div>
-
-          {status && (
-            <div className="flex items-center gap-2">
-              <Pill tone={status.payments.live ? "pass" : "warn"}>
-                payments: {status.payments.mode}
-              </Pill>
-              <Pill tone={status.llm.live ? "pass" : "warn"}>llm: {status.llm.mode}</Pill>
-            </div>
-          )}
-
-          <nav className="flex gap-1">
-            {TABS.map((t) => (
-              <NavLink
-                key={t.to}
-                to={t.to}
-                className={({ isActive }) =>
-                  `rounded-md px-3 py-1.5 text-xs font-medium transition ${
-                    isActive ? "bg-accent text-white" : "text-muted hover:bg-edge/50 hover:text-slate-200"
-                  }`
-                }
-              >
-                {t.label}
-              </NavLink>
-            ))}
-          </nav>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-7xl px-5 py-5">
-        <Routes>
-          <Route path="/" element={<Navigate to="/buyer" replace />} />
-          <Route path="/buyer" element={<BuyerPage />} />
-          <Route path="/approvals" element={<ApprovalsPage />} />
-          <Route path="/merchant" element={<MerchantPage />} />
-          <Route path="/audit" element={<AuditPage />} />
-        </Routes>
-      </main>
-
-      {status && (
-        <footer className="mx-auto max-w-7xl px-5 pb-8 pt-2">
-          <p className="text-[11px] leading-relaxed text-muted">
-            <strong className="text-slate-400">Architectural rule:</strong> the LLM has no tool,
-            function, or route that reaches the payment gateway. The only interfaces between the AI
-            layer and money are the permission check and the policy engine — both plain Python with
-            no model in the loop.
-          </p>
-        </footer>
-      )}
-    </div>
+    <AppShell pendingApprovals={pending}>
+      <Routes>
+        <Route path="/" element={<Navigate to={home} replace />} />
+        <Route path="/login" element={<Navigate to={home} replace />} />
+        <Route
+          path="/buyer"
+          element={can("buyer") ? <BuyerPage onChanged={refreshPending} /> : <Navigate to={home} replace />}
+        />
+        <Route
+          path="/approvals"
+          element={can("approvals") ? <ApprovalsPage onChanged={refreshPending} /> : <Navigate to={home} replace />}
+        />
+        <Route
+          path="/merchant"
+          element={can("merchant") ? <MerchantPage /> : <Navigate to={home} replace />}
+        />
+        <Route path="/audit" element={can("audit") ? <AuditPage /> : <Navigate to={home} replace />} />
+        <Route path="*" element={<Navigate to={home} replace />} />
+      </Routes>
+    </AppShell>
   );
 }

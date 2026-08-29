@@ -5,7 +5,17 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import approvals, audit, buyer, catalog, drills, merchant, system, webhooks
+from app.api.routes import (
+    approvals,
+    audit,
+    auth,
+    buyer,
+    catalog,
+    drills,
+    merchant,
+    system,
+    webhooks,
+)
 from app.config import settings
 from app.database import init_db
 
@@ -50,6 +60,7 @@ app.add_middleware(
 )
 
 app.include_router(system.router)
+app.include_router(auth.router)
 app.include_router(catalog.router)
 app.include_router(buyer.router)
 app.include_router(approvals.router)

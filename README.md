@@ -40,6 +40,16 @@ docker compose up --build
 | API docs (OpenAPI) | http://localhost:8000/docs |
 | Integration mode | http://localhost:8000/system/status |
 
+**Sign in** with a demo account (all use password `Demo@1234`):
+
+| Account | Role | Sees |
+|---|---|---|
+| `aditi@handshake.demo` | Buyer | Buyer · Approvals · Audit — **start here** |
+| `merchant@audiohub.demo` | Merchant | Merchant · Audit |
+| `admin@handshake.demo` | Admin | Everything — and still no financial authority |
+
+New to the app? Read the [**User Guide**](docs/USER_GUIDE.md).
+
 ```bash
 ./scripts/test.sh              # 128 backend tests + frontend typecheck & build
 python scripts/demo.py         # drives the full 5-minute demo end to end
@@ -93,6 +103,20 @@ from the catalog by `product_id`.
 
 ## What's built
 
+### Authentication & identity
+- **Real login/logout** — bcrypt passwords, opaque server-side sessions in
+  `httpOnly` `SameSite=Strict` cookies, and logout that *revokes the session
+  server-side* rather than just dropping a cookie.
+- **Role-gated access** — buyer, merchant and admin see different screens, and
+  the server decides which, not the client.
+- **Ownership on approvals** — a purchase can only be decided by the buyer whose
+  money it is. Before auth existed, any caller could approve anything.
+- **Attributable decisions** — the audit trail records the verified session
+  identity. The `actor` field was removed from the API rather than left as a
+  claim to be trusted (this is what US-12 actually asked for).
+- **Authentication is not authorization** — no role, including admin, can raise
+  a limit or unblock a purchase. `evaluate()` has nowhere to *put* an identity.
+
 ### Safety & control
 - **Deterministic policy engine** — category → per-transaction → daily → monthly
   → bundle discount, evaluated in that order. First failure names the rule.
@@ -129,27 +153,32 @@ from the catalog by `product_id`.
 | Forged signature | Rejected before the body is parsed |
 
 ### Interface
-Four dashboards: buyer (agent state, budgets, autonomy, NL input), approvals,
-merchant (opportunities, metrics, trust), and an audit timeline with the drills
-wired in as buttons.
+Login plus four role-gated dashboards: buyer (agent state, budgets, autonomy, NL
+input), approvals, merchant (opportunities, metrics, trust), and an audit
+timeline with the failure drills wired in as buttons.
+
+Light and dark themes, toast feedback on every action, loading skeletons,
+confirmation on destructive actions, a live pending-approval badge, keyboard
+focus rings throughout, and a responsive layout down to mobile.
 
 ---
 
 ## Tested
 
 ```
-128 passed
+169 passed
 ```
 
 | Suite | Covers |
 |---|---|
 | `test_policy_engine.py` (25) | Every rule, boundary and autonomy level — no mocks, no fixtures |
-| `test_failure_modes.py` (12) | The scored failure paths, asserting the *mechanism* |
-| `test_architecture.py` (13) | Import boundaries, tool schemas, audit immutability |
-| `test_trust_and_permissions.py` (13) | Capability enforcement; trust cannot override policy |
 | `test_agents.py` (23) | Parsing, ranking, rejection reasons, bundle decline |
 | `test_api.py` (24) | Full HTTP surface including validation and conflict handling |
+| `test_auth.py` (41) | Hashing, sessions, revocation, roles, ownership, lockout |
 | `test_money.py` (18) | Paise integrity from catalog row to Razorpay order |
+| `test_architecture.py` (13) | Import boundaries, tool schemas, audit immutability |
+| `test_trust_and_permissions.py` (13) | Capability enforcement; trust cannot override policy |
+| `test_failure_modes.py` (12) | The scored failure paths, asserting the *mechanism* |
 
 The architecture tests are the interesting ones: they turn claims in this README
 into build failures if the code ever contradicts them.
@@ -179,7 +208,7 @@ a live-demo failure surface with no corresponding benefit.
 | **Vector search / RAG** over the catalog | Semantic retrieval across a large catalog | 3–5 SKUs. SQL filtering is strictly sufficient; embeddings here are pure scope risk |
 | **LangGraph** | Branching, stateful multi-agent workflows | This flow is a linear pipeline. Wrapping straight-line calls buys abstraction we'd never use |
 | **Redis** | Distributed session/cache state | Single instance. The Postgres uniqueness constraint already does this job — better, because it's transactional |
-| **Clerk / full auth** | Multi-tenant production identity | One demo buyer. Authorization is already a real, separate layer; authentication is the part that doesn't matter here |
+| **Clerk / hosted auth** | Multi-tenant production identity, SSO, MFA | Auth is now built in directly — sessions, roles and ownership — without a third-party dependency or a live-demo failure surface. Email verification, password reset and MFA remain out of scope |
 | **Sentry** | Production error monitoring | No live user base during judging |
 | **Kubernetes** | Multi-node orchestration | One container |
 | **Multi-round negotiation** | Richer price discovery | Single request → single offer keeps the safety gate legible |
@@ -219,11 +248,13 @@ scripts/            dev.sh · test.sh · demo.py
 | Where does spend live? | **Persisted in Postgres.** Survives restart; a new session cannot reset a limit |
 | Scripted or live demo input? | **Scripted prompts, live input also available** — failure beats must trigger reliably |
 | Build the trust engine? | **Yes**, after P0 was complete — and wired so it provably cannot override policy |
+| Auth: hosted or built? | **Built in**, once it was explicitly requested. Kept strictly separate from authorization so it could not weaken the policy engine |
 
 ---
 
 ## Docs
 
+- [`docs/USER_GUIDE.md`](docs/USER_GUIDE.md) — **how to run and use the app**, screen by screen, with a five-minute walkthrough
 - [`docs/architecture.md`](docs/architecture.md) — component boundaries, data model, why plain Python
 - [`docs/safety.md`](docs/safety.md) — the seven principles, threat model, and what is *not* protected
 - [`docs/agent-protocol.md`](docs/agent-protocol.md) — the wire contract for a consuming agent

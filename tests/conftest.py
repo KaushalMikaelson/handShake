@@ -19,6 +19,10 @@ TMP = Path("/tmp/agent_commerce_tests")
 TMP.mkdir(exist_ok=True)
 os.environ.setdefault("DATABASE_URL", f"sqlite:///{TMP}/default.db")
 os.environ.setdefault("RAZORPAY_WEBHOOK_SECRET", "test_webhook_secret")
+# Minimum bcrypt cost: the suite seeds users in every fixture, and paying the
+# production work factor 128 times would add ~45s for no extra coverage. The
+# hashing code path exercised is identical.
+os.environ.setdefault("BCRYPT_ROUNDS", "4")
 # Deliberately no ANTHROPIC_API_KEY / RAZORPAY_KEY_ID: the suite runs against
 # the deterministic paths, so results are reproducible and offline.
 
@@ -86,6 +90,80 @@ def merchant(db):
     from app.models import Merchant
 
     return db.scalar(select(Merchant))
+
+
+# ----------------------------------------------------------------------
+# authenticated HTTP clients
+#
+# Every fixture below signs in through the real /auth/login endpoint rather
+# than stubbing the dependency, so each test exercises the actual session
+# cookie path a browser would take.
+# ----------------------------------------------------------------------
+DEMO_PASSWORD = "Demo@1234"
+BUYER_EMAIL = "aditi@handshake.demo"
+MERCHANT_EMAIL = "merchant@audiohub.demo"
+ADMIN_EMAIL = "admin@handshake.demo"
+
+
+@pytest.fixture
+def anon_client(db):
+    """A client with no session - for testing that guards actually guard."""
+    from fastapi.testclient import TestClient
+
+    from app.database import get_db
+    from app.main import app
+
+    app.dependency_overrides[get_db] = lambda: db
+    with TestClient(app) as c:
+        yield c
+    app.dependency_overrides.clear()
+
+
+def _signed_in(db, email: str):
+    from fastapi.testclient import TestClient
+
+    from app.database import get_db
+    from app.main import app
+
+    app.dependency_overrides[get_db] = lambda: db
+    client = TestClient(app)
+    client.__enter__()
+    response = client.post(
+        "/auth/login", json={"email": email, "password": DEMO_PASSWORD}
+    )
+    assert response.status_code == 200, response.text
+    return client
+
+
+@pytest.fixture
+def client(db):
+    """Signed in as the demo buyer - the default for most tests."""
+    c = _signed_in(db, BUYER_EMAIL)
+    yield c
+    c.__exit__(None, None, None)
+    from app.main import app
+
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def merchant_client(db):
+    c = _signed_in(db, MERCHANT_EMAIL)
+    yield c
+    c.__exit__(None, None, None)
+    from app.main import app
+
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def admin_client(db):
+    c = _signed_in(db, ADMIN_EMAIL)
+    yield c
+    c.__exit__(None, None, None)
+    from app.main import app
+
+    app.dependency_overrides.clear()
 
 
 @pytest.fixture

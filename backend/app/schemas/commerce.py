@@ -70,8 +70,14 @@ class ApprovalOut(BaseModel):
 
 
 class ApprovalDecision(BaseModel):
+    """A human's verdict on a pending purchase.
+
+    There is deliberately no `actor` field: the deciding identity is taken from
+    the authenticated session, so the audit trail records who actually clicked,
+    not who the request claimed to be.
+    """
+
     decision: str = Field(pattern="^(approve|reject)$")
-    actor: str = "human"
     note: str | None = None
 
 

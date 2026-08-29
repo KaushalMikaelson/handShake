@@ -75,21 +75,67 @@ Trust is computed, displayed and used only for ranking. It is not a parameter of
 
 > `test_maximum_trust_cannot_override_a_budget_limit`
 
+## Authentication is not authorization
+
+Adding logins to a system whose entire claim is "bounded autonomy" creates
+exactly one tempting mistake: letting an *identity* become an *exemption*. It
+does not, and the separation is structural rather than conventional.
+
+| Layer | Question it answers | Where |
+|---|---|---|
+| Authentication | Who is this human? | `services/auth.py`, `api/deps.py` |
+| Role guard | Which screens may they reach? | `api/deps.py` |
+| Permission set | Which capabilities does an *agent* hold? | `policies/permission.py` |
+| Policy engine | Is this specific transaction within limits? | `policies/engine.py` |
+
+Authentication decides *whose policy applies*. It never decides whether a
+purchase is allowed. The proof is the policy engine's signature: `evaluate()`
+takes a purchase, a buyer policy, a merchant policy and a spend context. There
+is nowhere to pass a user, a role, or a session, so no identity can influence a
+verdict even by accident.
+
+> `test_admin_role_cannot_bypass_the_policy_engine`,
+> `test_no_role_appears_in_the_policy_engines_inputs`,
+> `test_authenticating_does_not_change_any_spending_limit`
+
+What authentication *did* fix is attributability (US-12). Before it existed,
+any caller could approve any pending purchase and name themselves whatever they
+liked in the request body. Now approvals are gated by ownership, and the audit
+trail records the verified session identity — the `actor` field was removed
+from the API entirely, rather than left as a claim to be trusted.
+
+### Credential handling
+
+| Concern | Control |
+|---|---|
+| Password storage | bcrypt, per-password salt, cost factor 12 |
+| Password strength | Minimum 8 chars, mixed case, a digit; over-72-byte passwords rejected rather than silently truncated by bcrypt |
+| Session tokens | 256-bit CSPRNG, stored only as SHA-256 — a database leak yields no usable sessions |
+| Token transport | `httpOnly` cookie, so an XSS bug cannot read it |
+| CSRF | `SameSite=Strict` — the browser never attaches the cookie to a cross-site request, removing CSRF as a class for every mutating endpoint |
+| Logout | Server-side revocation, checked on every request; the token dies instantly, not at expiry |
+| Brute force | 5 failed attempts locks the account for 15 minutes, audited |
+| User enumeration | Unknown accounts and wrong passwords return an identical error, and a dummy bcrypt check equalises response timing |
+| Privilege escalation | Role is never read from a request body; self-registration is always `buyer` |
+| Session fixation | A fresh token is minted on every login; sessions are never adopted from client input |
+
 ## Defence in depth: the layers a purchase must clear
 
 ```
+0. Authentication .......... valid, unrevoked session → which buyer is this?
 1. Agent eligibility ....... deterministic filter (category, stock, budget)
 2. Permission check ........ does this agent hold this capability at all?
 3. Policy engine ........... category → per-transaction → daily → monthly → discount
 4. Autonomy routing ........ L1 recommend · L2 always ask · L3 bounded auto
-5. Human approval .......... explicit Approve/Reject, no timeout-to-approve
+5. Human approval .......... explicit Approve/Reject, by the OWNING buyer only
 6. Idempotency ............. key derived from purchase_intent_id
 7. Signature verification .. HMAC over the raw webhook body
 8. Replay guard ............ DB-unique event_id
 ```
 
-Layers 2–8 contain no model output. Removing the LLM entirely would change the
-*quality* of recommendations and nothing about the safety properties.
+Layers 1–8 contain no model output. Removing the LLM entirely would change the
+*quality* of recommendations and nothing about the safety properties. Layer 0
+selects *which* policy applies; it can never relax layers 2–5.
 
 ## Threat model
 
@@ -106,16 +152,26 @@ Layers 2–8 contain no model output. Removing the LLM entirely would change the
 | Forged webhook payload | HMAC over raw body, verified before parsing | Rejected before any state change |
 | Agent retries a failed purchase intent | Idempotency key from `purchase_intent_id` | Same order returned, never a second |
 | Buyer's budget silently drained by failed attempts | Spend committed only on capture | Blocked/rejected attempts cost nothing |
+| Stranger approves someone else's pending purchase | Ownership check on every approval read and decision | 404 — existence is not even disclosed |
+| Caller claims a false identity when approving | `actor` removed from the API; identity taken from the session | Audit records the verified user |
+| Stolen session cookie | httpOnly + SameSite=Strict; revocable via logout-all | Not readable by JS, not sent cross-site |
+| Self-registering as an admin | Role never read from the request body | Always created as `buyer` |
 
 ## What is deliberately *not* protected
 
 Stated plainly, because unstated limitations are how demos mislead:
 
-- **No production authentication.** The demo identity is a header with a
-  hardcoded default. Authorization is real and separate; authentication is not.
-  Anyone who can reach the API can act as the demo buyer.
-- **No rate limiting.** A caller could issue unlimited shopping requests. Budget
-  caps bound the financial damage, not the compute.
+- **No email verification or password reset.** Registration trusts the address
+  given, and a forgotten password cannot be recovered — both need an email
+  provider, which is out of scope here.
+- **No MFA.** A single factor guards an account.
+- **Demo credentials are published** on the login screen and in this repo. They
+  exist to make review fast; they are not secrets.
+- **Rate limiting is login-only.** Failed logins lock an account, but a
+  signed-in caller could issue unlimited shopping requests. Budget caps bound
+  the financial damage, not the compute.
+- **Sessions are not bound to a device or IP.** A stolen cookie works until it
+  expires or is revoked.
 - **Test mode only.** No live payment credentials are supported, by design.
 - **Single-tenant.** One buyer, one merchant. No cross-tenant isolation exists
   because there are no tenants.

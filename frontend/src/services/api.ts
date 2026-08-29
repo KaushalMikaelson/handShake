@@ -2,14 +2,58 @@
 
 const BASE = "/api";
 
+/** Thrown for any non-2xx response, carrying the status so callers can branch. */
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+type UnauthorizedHandler = () => void;
+let onUnauthorized: UnauthorizedHandler | null = null;
+
+/**
+ * Register a global 401 handler.
+ *
+ * A session can expire or be revoked from another device at any moment. Rather
+ * than every screen handling that, one handler bounces the user to the login
+ * page, so an expired session can never leave the UI showing stale data it is
+ * no longer entitled to.
+ */
+export function setUnauthorizedHandler(handler: UnauthorizedHandler) {
+  onUnauthorized = handler;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
+    // send the httpOnly session cookie
+    credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     ...init,
   });
+
+  if (res.status === 401 && !path.startsWith("/auth/")) {
+    onUnauthorized?.();
+    throw new ApiError(401, "Your session has expired. Please sign in again.");
+  }
+
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`${res.status} ${res.statusText}: ${text.slice(0, 300)}`);
+    let message = `${res.status} ${res.statusText}`;
+    try {
+      const body = await res.json();
+      // FastAPI puts the human-readable reason in `detail`
+      if (typeof body?.detail === "string") message = body.detail;
+      else if (Array.isArray(body?.detail)) {
+        message = body.detail.map((d: any) => d.msg ?? String(d)).join("; ");
+      }
+    } catch {
+      /* non-JSON error body - keep the status line */
+    }
+    throw new ApiError(res.status, message);
   }
   return res.json() as Promise<T>;
 }
@@ -197,6 +241,35 @@ export interface Opportunity {
   status: string;
 }
 
+export type UserRole = "buyer" | "merchant" | "admin";
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+  role: UserRole;
+  buyer_id: string | null;
+  merchant_id: string | null;
+  last_login_at: string | null;
+}
+
+export interface AuthState {
+  authenticated: boolean;
+  user: AuthUser | null;
+  session_expires_at: string | null;
+  permitted_views: string[];
+}
+
+export interface ActiveSession {
+  id: string;
+  created_at: string;
+  last_seen_at: string;
+  expires_at: string;
+  user_agent: string;
+  ip_address: string;
+  current: boolean;
+}
+
 export interface SystemStatus {
   environment: string;
   payments: { mode: string; live: boolean; note: string; calls_made: number };
@@ -207,6 +280,24 @@ export interface SystemStatus {
 
 // ---------- endpoints ----------
 export const api = {
+  // ---------- auth ----------
+  login: (email: string, password: string) =>
+    request<AuthState>("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }),
+  register: (email: string, name: string, password: string) =>
+    request<AuthState>("/auth/register", {
+      method: "POST",
+      body: JSON.stringify({ email, name, password }),
+    }),
+  logout: () => request<{ detail: string }>("/auth/logout", { method: "POST" }),
+  logoutAll: () => request<{ detail: string }>("/auth/logout-all", { method: "POST" }),
+  me: () => request<AuthState>("/auth/me"),
+  sessions: () => request<ActiveSession[]>("/auth/sessions"),
+  revokeSession: (id: string) =>
+    request<{ detail: string }>(`/auth/sessions/${id}`, { method: "DELETE" }),
+
   systemStatus: () => request<SystemStatus>("/system/status"),
   catalog: () => request<{ merchant: any; count: number; products: Product[] }>("/catalog"),
 
@@ -227,10 +318,12 @@ export const api = {
     }),
 
   approvals: () => request<Approval[]>("/approvals"),
+  // The deciding identity comes from the session server-side; there is no
+  // actor field to send.
   decide: (id: string, decision: "approve" | "reject", note?: string) =>
     request<ShopResponse>(`/approvals/${id}/decision`, {
       method: "POST",
-      body: JSON.stringify({ decision, actor: "aditi", note: note ?? null }),
+      body: JSON.stringify({ decision, note: note ?? null }),
     }),
 
   opportunities: () => request<Opportunity[]>("/merchant/opportunities"),

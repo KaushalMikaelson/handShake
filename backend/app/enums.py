@@ -2,6 +2,19 @@
 from enum import StrEnum
 
 
+class UserRole(StrEnum):
+    """Authentication roles - who a person is, NOT what a purchase may cost.
+
+    Roles gate which screens and endpoints a human can reach. They are
+    deliberately absent from the policy engine's inputs: no role, including
+    ADMIN, can raise a spending limit or unblock a transaction.
+    """
+
+    BUYER = "buyer"
+    MERCHANT = "merchant"
+    ADMIN = "admin"
+
+
 class AutonomyLevel(StrEnum):
     """US-6b - how much authority the buyer has delegated to their agent."""
 
@@ -78,6 +91,13 @@ class AuditAction(StrEnum):
     PAYMENT_CONFIRMED = "PAYMENT_CONFIRMED"
     WEBHOOK_PROCESSED = "WEBHOOK_PROCESSED"
     ORDER_COMPLETED = "ORDER_COMPLETED"
+    # authentication
+    LOGIN_SUCCEEDED = "LOGIN_SUCCEEDED"
+    LOGIN_FAILED = "LOGIN_FAILED"
+    LOGOUT = "LOGOUT"
+    ACCOUNT_LOCKED = "ACCOUNT_LOCKED"
+    SESSION_REJECTED = "SESSION_REJECTED"
+    POLICY_UPDATED = "POLICY_UPDATED"
     # failure paths
     POLICY_BLOCKED = "POLICY_BLOCKED"
     PERMISSION_DENIED = "PERMISSION_DENIED"
