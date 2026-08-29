@@ -1,4 +1,5 @@
 from app.models.audit import AuditEvent, ProcessedWebhookEvent
+from app.models.auth import Session, User
 from app.models.buyer import Buyer, SpendLedgerEntry
 from app.models.catalog import BundleOpportunity, Merchant, Product
 from app.models.commerce import ApprovalRequest, PurchaseIntent, Transaction
@@ -11,6 +12,7 @@ from app.enums import (
     IntentStatus,
     OpportunityStatus,
     TransactionStatus,
+    UserRole,
 )
 
 __all__ = [
@@ -27,6 +29,9 @@ __all__ = [
     "Merchant",
     "OpportunityStatus",
     "ProcessedWebhookEvent",
+    "Session",
+    "User",
+    "UserRole",
     "Product",
     "PurchaseIntent",
     "SpendLedgerEntry",

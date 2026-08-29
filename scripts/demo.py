@@ -11,10 +11,19 @@ triggers reliably.
 from __future__ import annotations
 
 import argparse
+import http.cookiejar
 import json
 import sys
 import urllib.error
 import urllib.request
+
+# The API is behind authentication, so the script keeps a cookie jar and signs
+# in exactly as a browser would.
+_jar = http.cookiejar.CookieJar()
+_opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(_jar))
+
+DEMO_EMAIL = "aditi@handshake.demo"
+DEMO_PASSWORD = "Demo@1234"
 
 RESET, BOLD, DIM = "\033[0m", "\033[1m", "\033[2m"
 GREEN, RED, YELLOW, BLUE = "\033[32m", "\033[31m", "\033[33m", "\033[34m"
@@ -28,10 +37,13 @@ def call(base: str, path: str, payload: dict | None = None) -> dict:
         headers={"Content-Type": "application/json"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=30) as r:
+        with _opener.open(req, timeout=30) as r:
             return json.loads(r.read())
     except urllib.error.HTTPError as e:
-        return json.loads(e.read())
+        try:
+            return json.loads(e.read())
+        except ValueError:
+            return {"detail": f"HTTP {e.code}"}
 
 
 def rupees(paise) -> str:
@@ -84,6 +96,15 @@ def main() -> int:
 
     print(f"{BOLD}Bounded AI-to-AI Commerce — demo script{RESET}")
     print(f"{DIM}payments: {status['payments']['mode']} · llm: {status['llm']['mode']}{RESET}")
+
+    # ---------------------------------------------------------------- 0:00
+    beat("0", "Sign in")
+    auth = call(base, "/auth/login", {"email": DEMO_EMAIL, "password": DEMO_PASSWORD})
+    if not auth.get("authenticated"):
+        print(f"{RED}Login failed: {auth.get('detail')}{RESET}")
+        return 1
+    user = auth["user"]
+    verdict(True, f"signed in as {user['name']} ({user['role']}) — session cookie held")
 
     # ---------------------------------------------------------------- 0:30
     beat("1", "Happy path — bounded auto-purchase")
@@ -146,6 +167,15 @@ def main() -> int:
     state = call(base, "/buyer/state")
     print(f"\n  {DIM}budget:{RESET} {rupees(state['spent_today'])} spent today · "
           f"{rupees(state['remaining_today'])} remaining")
+
+    # ---------------------------------------------------------------- 4:45
+    beat("8", "Sign out — the session dies on the server")
+    call(base, "/auth/logout", {})
+    after = call(base, "/buyer/state")
+    verdict(
+        "detail" in after,
+        "the same cookie no longer works: logout revokes server-side, not just in the browser",
+    )
 
     print(f"\n{BOLD}We didn't build an AI that can spend money —{RESET}")
     print(f"{BOLD}we built an AI that can spend money only within rules its owner controls.{RESET}\n")

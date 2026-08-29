@@ -2,10 +2,10 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.api.deps import current_buyer
+from app.api.deps import current_buyer, current_user
 from app.database import get_db
 from app.enums import AgentId, AuditAction, AutonomyLevel
-from app.models import Buyer
+from app.models import Buyer, User
 from app.policies.permission import BUYER_AGENT_PERMISSIONS
 from app.schemas.agents import (
     BuyerPolicyOut,
@@ -66,22 +66,28 @@ def update_policy(
     payload: BuyerPolicyUpdate,
     db: Session = Depends(get_db),
     buyer: Buyer = Depends(current_buyer),
+    user: User = Depends(current_user),
 ) -> BuyerPolicyOut:
-    """Policy is editable by the human owner only.
+    """Policy is editable by its authenticated human owner only.
 
     Note what is NOT here: any agent-facing route to this handler. The buyer
-    agent holds MODIFY_USER_POLICY in its DENIED set and no agent code path
-    reaches this endpoint - Security Principle 2.
+    agent holds MODIFY_USER_POLICY in its DENIED set, and no agent code path
+    reaches this endpoint - Security Principle 2. Authentication changes who
+    may edit a policy; it does not give anyone a way to escape one.
     """
     changes = payload.model_dump(exclude_none=True)
+    before = {field: getattr(buyer, field) for field in changes}
     for field, value in changes.items():
         setattr(buyer, field, value)
     db.commit()
     audit.record(
         db,
         agent_id=AgentId.HUMAN,
-        action=AuditAction.POLICY_CHECK,
-        reason=f"Buyer updated their own policy: {', '.join(changes) or 'no changes'}.",
-        input_reference=changes,
+        action=AuditAction.POLICY_UPDATED,
+        reason=(
+            f"{user.name} <{user.email}> updated their policy: "
+            f"{', '.join(changes) or 'no changes'}."
+        ),
+        input_reference={"before": before, "after": changes},
     )
     return _policy_out(buyer)

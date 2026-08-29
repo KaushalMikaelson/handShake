@@ -30,7 +30,12 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-5"
 
-    # --- demo identities (auth is out of scope per PRD 3.12) ---
+    # bcrypt cost factor. 12 is the production floor; the test suite lowers it
+    # so 128 tests do not each pay ~0.3s of deliberate hashing work. Never
+    # lower this in a real deployment - the cost IS the security property.
+    bcrypt_rounds: int = 12
+
+    # --- demo identities ---
     demo_buyer_id: str = "buyer_aditi"
     demo_merchant_id: str = "merchant_audiohub"
 

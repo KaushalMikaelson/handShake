@@ -5,40 +5,49 @@ import { Pill } from "./ui";
  * Per-rule policy report.
  *
  * Shows every rule the engine evaluated, in the order it ran them, and names
- * the one that failed. This is the screen that makes "safe by construction"
- * legible rather than a claim in a README.
+ * the one that failed. This is the view that makes "safe by construction"
+ * legible instead of a claim in a README.
  */
 export function PolicyReport({ policy }: { policy: PolicyDecision }) {
   const blocked = policy.decision === "BLOCKED";
+
   return (
     <div className="space-y-3">
       <div
-        className={`rounded-md border p-3 ${
-          blocked ? "border-fail/40 bg-fail/10" : "border-pass/30 bg-pass/5"
+        className={`rounded-lg border p-3 ${
+          blocked ? "border-danger/40 bg-danger/8" : "border-ok/35 bg-ok/6"
         }`}
       >
-        <div className="mb-1 flex items-center gap-2">
-          <Pill tone={blocked ? "fail" : "pass"}>{policy.decision}</Pill>
+        <div className="mb-1.5 flex flex-wrap items-center gap-2">
+          <Pill tone={blocked ? "danger" : "ok"}>{policy.decision}</Pill>
           {policy.failed_rule && (
-            <code className="font-mono text-[11px] text-fail">{policy.failed_rule}</code>
+            <code className="font-mono text-2xs text-danger">{policy.failed_rule}</code>
           )}
         </div>
-        <p className="text-xs leading-relaxed text-slate-300">{policy.reason}</p>
+        <p className="text-xs leading-relaxed text-body">{policy.reason}</p>
       </div>
 
-      <ul className="space-y-1">
-        {policy.checks.map((c) => (
-          <li key={c.rule} className="flex items-start gap-2 rounded border border-edge/60 p-2">
-            <span className={`mt-0.5 text-xs ${c.passed ? "text-pass" : "text-fail"}`}>
+      <ol className="space-y-1">
+        {policy.checks.map((c, i) => (
+          <li
+            key={c.rule}
+            className="flex items-start gap-2.5 rounded-lg border border-line bg-raised/40 p-2.5"
+          >
+            <span className="mt-0.5 font-mono text-2xs text-subtle">{i + 1}</span>
+            <span
+              className={`mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-[9px] font-bold ${
+                c.passed ? "bg-ok/15 text-ok" : "bg-danger/15 text-danger"
+              }`}
+            >
               {c.passed ? "✓" : "✕"}
             </span>
             <div className="min-w-0 flex-1">
-              <code className="font-mono text-[11px] text-slate-400">{c.rule}</code>
-              <p className="text-xs text-slate-300">{c.detail}</p>
+              <code className="font-mono text-2xs text-subtle">{c.rule}</code>
+              <p className="mt-0.5 text-xs leading-relaxed text-body">{c.detail}</p>
             </div>
           </li>
         ))}
-      </ul>
+      </ol>
     </div>
   );
 }

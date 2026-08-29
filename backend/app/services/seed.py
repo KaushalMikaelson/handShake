@@ -16,7 +16,7 @@ from app.models import (
     OpportunityStatus,
     Product,
 )
-from app.enums import AutonomyLevel
+from app.enums import AutonomyLevel, UserRole
 
 MERCHANT_ID = settings.demo_merchant_id
 BUYER_ID = settings.demo_buyer_id
@@ -125,8 +125,76 @@ def seed_if_empty(db: Session) -> bool:
     )
 
     _seed_opportunities(db)
+    db.flush()
+    _seed_users(db)
     db.commit()
     return True
+
+
+# Demo credentials. Printed on the login screen so a judge can sign in in
+# seconds; the password still satisfies the real password policy, so the
+# hashing path being exercised is the production one.
+DEMO_PASSWORD = "Demo@1234"
+
+DEMO_USERS = [
+    dict(
+        email="aditi@handshake.demo",
+        name="Aditi Rao",
+        role=UserRole.BUYER,
+        buyer_id=BUYER_ID,
+        merchant_id=None,
+    ),
+    dict(
+        email="merchant@audiohub.demo",
+        name="AudioHub Growth Team",
+        role=UserRole.MERCHANT,
+        buyer_id=None,
+        merchant_id=MERCHANT_ID,
+    ),
+    dict(
+        email="admin@handshake.demo",
+        name="Platform Admin",
+        role=UserRole.ADMIN,
+        buyer_id=BUYER_ID,
+        merchant_id=MERCHANT_ID,
+    ),
+]
+
+
+def _seed_users(db: Session) -> None:
+    """Create the three demo logins.
+
+    Imported lazily so the seed module stays importable without bcrypt in
+    contexts that only need catalog data.
+    """
+    from app.services.auth import create_user
+
+    for spec in DEMO_USERS:
+        create_user(db, password=DEMO_PASSWORD, **spec)
+
+
+def create_buyer_profile(db: Session, *, name: str) -> Buyer:
+    """A policy row for a newly registered buyer.
+
+    Defaults are deliberately conservative - a brand-new account gets a small
+    daily budget and must approve almost everything. Widening those limits is
+    an explicit, human action on the Buyer dashboard.
+    """
+    buyer = Buyer(
+        id=f"buyer_{uuid.uuid4().hex[:10]}",
+        name=name,
+        daily_budget=500_000,                    # Rs 5,000
+        monthly_budget=2_000_000,                # Rs 20,000
+        max_transaction=300_000,                 # Rs 3,000
+        allowed_categories=["electronics", "accessories"],
+        blocked_categories=["financial_services"],
+        require_approval_above=100_000,          # Rs 1,000
+        allow_automatic_purchase_below=50_000,   # Rs 500
+        autonomy_level=AutonomyLevel.PREPARE,    # ask every time, until widened
+    )
+    db.add(buyer)
+    db.flush()
+    return buyer
 
 
 def _seed_opportunities(db: Session) -> None:
