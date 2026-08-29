@@ -1,0 +1,29 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-ink text-slate-200 antialiased;
+}
+
+.card {
+  @apply rounded-lg border border-edge bg-panel p-4;
+}
+.label {
+  @apply text-[11px] uppercase tracking-wider text-muted;
+}
+.btn {
+  @apply rounded-md px-3 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-50;
+}
+.btn-primary {
+  @apply btn bg-accent text-white hover:bg-accent/85;
+}
+.btn-ghost {
+  @apply btn border border-edge text-slate-300 hover:bg-edge/40;
+}
+.btn-danger {
+  @apply btn border border-fail/50 text-fail hover:bg-fail/10;
+}
+.pill {
+  @apply inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold;
+}
