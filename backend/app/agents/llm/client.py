@@ -43,12 +43,21 @@ class LLMResult:
 class LLMClient:
     def __init__(self) -> None:
         self.provider: str | None = None
+        self._genai_client = None
         self._anthropic_client = None
         self._live = settings.llm_live_mode
 
         if settings.gemini_api_key:
-            self.provider = "gemini"
-            self._live = True
+            try:
+                from google import genai
+
+                self._genai_client = genai.Client(api_key=settings.gemini_api_key)
+                self.provider = "gemini"
+                self._live = True
+            except Exception as exc:
+                logger.warning("Google GenAI client unavailable: %s", exc)
+                self.provider = "gemini"
+                self._live = True
         elif settings.anthropic_api_key:
             try:
                 import anthropic
@@ -114,15 +123,50 @@ class LLMClient:
         tool_description: str,
         input_schema: dict,
     ) -> LLMResult:
-        try:
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_model}:generateContent?key={settings.gemini_api_key}"
+        system_instruction = (
+            f"{system}\n\n"
+            f"Task ({tool_name}): {tool_description}\n\n"
+            f"You MUST output a valid JSON object matching this schema:\n"
+            f"{json.dumps(input_schema, indent=2)}"
+        )
 
-            system_instruction = (
-                f"{system}\n\n"
-                f"Task ({tool_name}): {tool_description}\n\n"
-                f"You MUST output a valid JSON object matching this schema:\n"
-                f"{json.dumps(input_schema, indent=2)}"
-            )
+        full_prompt = f"{system_instruction}\n\nUser Request: {prompt}"
+
+        if self._genai_client is not None:
+            try:
+                # Primary path: official google-genai Client interactions
+                if hasattr(self._genai_client, "interactions"):
+                    interaction = self._genai_client.interactions.create(
+                        model=settings.gemini_model,
+                        input=full_prompt,
+                    )
+                    text = interaction.output_text.strip()
+                else:
+                    from google.genai import types
+
+                    response = self._genai_client.models.generate_content(
+                        model=settings.gemini_model,
+                        contents=full_prompt,
+                        config=types.GenerateContentConfig(
+                            response_mime_type="application/json",
+                            temperature=0.1,
+                        ),
+                    )
+                    text = response.text.strip()
+
+                parsed_data = json.loads(text)
+                if isinstance(parsed_data, dict):
+                    return LLMResult(data=parsed_data, mode="gemini")
+            except Exception as exc:
+                logger.warning("google-genai SDK call failed, attempting HTTP fallback: %s", exc)
+
+        # Resilient HTTP fallback path
+        try:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_model}:generateContent"
+            headers = {
+                "x-goog-api-key": settings.gemini_api_key,
+                "Content-Type": "application/json",
+            }
 
             payload = {
                 "contents": [
@@ -140,8 +184,8 @@ class LLMClient:
                 },
             }
 
-            with httpx.Client(timeout=15.0) as http_client:
-                response = http_client.post(url, json=payload)
+            with httpx.Client(timeout=30.0) as http_client:
+                response = http_client.post(url, headers=headers, json=payload)
                 response.raise_for_status()
                 res_data = response.json()
 
@@ -188,7 +232,7 @@ class LLMClient:
                 if getattr(block, "type", None) == "tool_use":
                     return LLMResult(data=dict(block.input), mode="anthropic")
             return LLMResult(data={}, mode="deterministic", error="no_tool_use_block")
-        except Exception as exc:
+        except Exception as exc:  # pragma: no cover - depends on network
             logger.warning("Anthropic call failed, using deterministic fallback: %s", exc)
             return LLMResult(data={}, mode="deterministic", error=str(exc))
 

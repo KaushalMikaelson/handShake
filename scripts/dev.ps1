@@ -11,8 +11,8 @@ $api = Start-Process -NoNewWindow -PassThru -FilePath "$Root\backend\.venv\Scrip
 
 # --- Frontend ---
 Write-Host "==> Starting frontend on http://127.0.0.1:5173" -ForegroundColor Cyan
-$ui = Start-Process -NoNewWindow -PassThru -FilePath "npm" `
-    -ArgumentList "run dev" `
+$ui = Start-Process -NoNewWindow -PassThru -FilePath "cmd.exe" `
+    -ArgumentList "/c npm run dev" `
     -WorkingDirectory "$Root\frontend"
 
 Write-Host "`nBoth servers running. Press Ctrl+C to stop.`n" -ForegroundColor Green
