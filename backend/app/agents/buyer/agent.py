@@ -163,16 +163,17 @@ class BuyerAgent:
 
         llm = self._rank_with_llm(evaluations, intent)
         if llm is not None:
-            picked_id, llm_justification, notes = llm
+            picked_id, llm_justification, notes, llm_mode = llm
             # Guardrail: the model may only pick from the eligible set. If it
             # names anything else we keep the deterministic winner.
             if picked_id in {e.product_id for e in eligible}:
                 chosen = next(e for e in eligible if e.product_id == picked_id)
                 justification = llm_justification
-                mode = "anthropic"
+                mode = llm_mode
                 for e in evaluations:
                     if e.product_id in notes:
                         e.justification = notes[e.product_id]
+
 
         for e in evaluations:
             if not e.justification:
@@ -214,7 +215,7 @@ class BuyerAgent:
 
     def _rank_with_llm(
         self, evaluations: list[CandidateEvaluation], intent: ParsedIntent
-    ) -> tuple[str, str, dict[str, str]] | None:
+    ) -> tuple[str, str, dict[str, str], str] | None:
         client = get_llm_client()
         if not client.live:
             return None
@@ -241,7 +242,7 @@ class BuyerAgent:
             tool_description="Record the selected product and the justification for the shopper.",
             input_schema=RANKING_TOOL_SCHEMA,
         )
-        if result.mode != "anthropic" or not result.data:
+        if result.mode == "deterministic" or not result.data:
             return None
         picked = str(result.data.get("selected_product_id", ""))
         justification = str(result.data.get("justification", "")).strip()
@@ -252,4 +253,5 @@ class BuyerAgent:
         }
         if not picked or not justification:
             return None
-        return picked, justification, notes
+        return picked, justification, notes, result.mode
+

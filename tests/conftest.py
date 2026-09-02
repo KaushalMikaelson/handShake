@@ -15,7 +15,9 @@ import pytest
 BACKEND = Path(__file__).resolve().parents[1] / "backend"
 sys.path.insert(0, str(BACKEND))
 
-TMP = Path("/tmp/agent_commerce_tests")
+import tempfile
+
+TMP = Path(tempfile.gettempdir()) / "agent_commerce_tests"
 TMP.mkdir(exist_ok=True)
 os.environ.setdefault("DATABASE_URL", f"sqlite:///{TMP}/default.db")
 os.environ.setdefault("RAZORPAY_WEBHOOK_SECRET", "test_webhook_secret")

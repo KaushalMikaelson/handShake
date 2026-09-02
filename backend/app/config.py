@@ -30,6 +30,11 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-5"
 
+    # --- Gemini ---
+    gemini_api_key: str = ""
+    gemini_model: str = "gemini-2.5-flash"
+
+
     # bcrypt cost factor. 12 is the production floor; the test suite lowers it
     # so 128 tests do not each pay ~0.3s of deliberate hashing work. Never
     # lower this in a real deployment - the cost IS the security property.
@@ -48,7 +53,8 @@ class Settings(BaseSettings):
 
     @property
     def llm_live_mode(self) -> bool:
-        return bool(self.anthropic_api_key)
+        return bool(self.gemini_api_key or self.anthropic_api_key)
+
 
     @property
     def cors_origin_list(self) -> list[str]:

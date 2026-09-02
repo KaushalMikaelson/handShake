@@ -33,16 +33,21 @@ def system_status():
             "calls_made": payments.call_count,
         },
         "llm": {
-            "mode": "anthropic" if llm.live else "deterministic",
+            "mode": llm.provider if llm.live else "deterministic",
             "live": llm.live,
-            "model": settings.anthropic_model if llm.live else None,
+            "model": settings.gemini_model if llm.provider == "gemini" else (settings.anthropic_model if llm.live else None),
             "note": (
-                "Anthropic structured output active."
-                if llm.live
-                else "No ANTHROPIC_API_KEY: agents use their deterministic rule-based "
-                     "path. Every guardrail behaves identically either way."
+                f"Gemini structured output active ({settings.gemini_model})."
+                if llm.provider == "gemini"
+                else (
+                    "Anthropic structured output active."
+                    if llm.live
+                    else "No LLM API key: agents use their deterministic rule-based "
+                         "path. Every guardrail behaves identically either way."
+                )
             ),
         },
+
         "permissions": {
             "buyer_agent": {
                 "allowed": BUYER_AGENT_PERMISSIONS.allowed_names,

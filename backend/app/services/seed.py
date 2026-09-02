@@ -15,6 +15,7 @@ from app.models import (
     Merchant,
     OpportunityStatus,
     Product,
+    User,
 )
 from app.enums import AutonomyLevel, UserRole
 
@@ -84,51 +85,51 @@ PRODUCTS = [
 
 def seed_if_empty(db: Session) -> bool:
     """Idempotent seed. Returns True if data was written."""
-    if db.query(Merchant).count() > 0:
-        return False
-
-    merchant = Merchant(
-        id=MERCHANT_ID,
-        name="AudioHub India",
-        description="Audio gear merchant with an AI growth agent for bundling and upsell.",
-        max_discount_pct=10,
-        max_campaign_budget=2_500_000,          # Rs 25,000
-        auto_approve_bundle_discount_below_pct=5,
-        verified_catalog=True,
-        successful_transactions=42,
-        failed_transactions=1,
-    )
-    db.add(merchant)
-
-    for spec in PRODUCTS:
-        db.add(Product(merchant_id=MERCHANT_ID, currency="INR", stock_available=True, **spec))
-
-    # Flush before inserting opportunities. BundleOpportunity references
-    # merchants and products by raw FK columns with no relationship(), so
-    # SQLAlchemy cannot infer the insert order on its own - and Postgres
-    # enforces the constraint even though SQLite silently would not.
-    db.flush()
-
-    db.add(
-        Buyer(
-            id=BUYER_ID,
-            name="Aditi",
-            daily_budget=1_500_000,             # Rs 15,000
-            monthly_budget=5_000_000,           # Rs 50,000
-            max_transaction=1_000_000,          # Rs 10,000
-            allowed_categories=["electronics", "accessories"],
-            blocked_categories=["financial_services"],
-            require_approval_above=500_000,     # Rs 5,000
-            allow_automatic_purchase_below=200_000,  # Rs 2,000
-            autonomy_level=AutonomyLevel.BOUNDED_AUTO,
+    data_written = False
+    if db.query(Merchant).count() == 0:
+        merchant = Merchant(
+            id=MERCHANT_ID,
+            name="AudioHub India",
+            description="Audio gear merchant with an AI growth agent for bundling and upsell.",
+            max_discount_pct=10,
+            max_campaign_budget=2_500_000,          # Rs 25,000
+            auto_approve_bundle_discount_below_pct=5,
+            verified_catalog=True,
+            successful_transactions=42,
+            failed_transactions=1,
         )
-    )
+        db.add(merchant)
 
-    _seed_opportunities(db)
-    db.flush()
-    _seed_users(db)
+        for spec in PRODUCTS:
+            db.add(Product(merchant_id=MERCHANT_ID, currency="INR", stock_available=True, **spec))
+
+        db.flush()
+
+        db.add(
+            Buyer(
+                id=BUYER_ID,
+                name="Aditi",
+                daily_budget=1_500_000,             # Rs 15,000
+                monthly_budget=5_000_000,           # Rs 50,000
+                max_transaction=1_000_000,          # Rs 10,000
+                allowed_categories=["electronics", "accessories"],
+                blocked_categories=["financial_services"],
+                require_approval_above=500_000,     # Rs 5,000
+                allow_automatic_purchase_below=200_000,  # Rs 2,000
+                autonomy_level=AutonomyLevel.BOUNDED_AUTO,
+            )
+        )
+
+        _seed_opportunities(db)
+        db.flush()
+        data_written = True
+
+    if db.query(User).count() == 0:
+        _seed_users(db)
+        data_written = True
+
     db.commit()
-    return True
+    return data_written
 
 
 # Demo credentials. Printed on the login screen so a judge can sign in in

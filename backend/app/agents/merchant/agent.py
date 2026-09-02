@@ -132,13 +132,13 @@ class MerchantGrowthAgent:
 
         llm = self._propose_with_llm(merchant, anchor, affordable, remaining_budget)
         if llm is not None:
-            offer_bundle, companion_id, llm_discount, llm_reason = llm
+            offer_bundle, companion_id, llm_discount, llm_reason, llm_mode = llm
             if not offer_bundle:
                 return BundleOffer(
                     offered=False,
                     reasoning=llm_reason
                     or "The growth agent judged that no bundle suits this purchase.",
-                    llm_mode="anthropic",
+                    llm_mode=llm_mode,
                 )
             match = next((c for c in affordable if c.id == companion_id), None)
             if match is not None:
@@ -149,7 +149,8 @@ class MerchantGrowthAgent:
                     0, min(int(llm_discount), self._discount_ceiling(merchant, anchor, companion))
                 )
                 reasoning = llm_reason or reasoning
-                mode = "anthropic"
+                mode = llm_mode
+
 
         list_price = anchor.price + companion.price
         # Integer arithmetic, floor-rounded - the same formula the policy engine
@@ -207,7 +208,7 @@ class MerchantGrowthAgent:
         anchor: Product,
         companions: list[Product],
         remaining_budget: int | None,
-    ) -> tuple[bool, str, int, str] | None:
+    ) -> tuple[bool, str, int, str, str] | None:
         client = get_llm_client()
         if not client.live:
             return None
@@ -235,7 +236,7 @@ class MerchantGrowthAgent:
             tool_description="Record the bundle proposal, or the decision not to offer one.",
             input_schema=BUNDLE_TOOL_SCHEMA,
         )
-        if result.mode != "anthropic" or not result.data:
+        if result.mode == "deterministic" or not result.data:
             return None
         data = result.data
         return (
@@ -243,4 +244,6 @@ class MerchantGrowthAgent:
             str(data.get("companion_product_id", "")),
             int(data.get("discount_pct", 0) or 0),
             str(data.get("reasoning", "")).strip(),
+            result.mode,
         )
+

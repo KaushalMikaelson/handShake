@@ -185,7 +185,7 @@ def parse_intent(query: str) -> tuple[ParsedIntent, str]:
         tool_description="Record the structured shopping intent extracted from the user message.",
         input_schema=INTENT_TOOL_SCHEMA,
     )
-    if result.mode == "anthropic" and result.data:
+    if result.mode != "deterministic" and result.data:
         try:
             # Pydantic validation at the boundary is what makes trusting this safe
             parsed = ParsedIntent.model_validate(result.data)
@@ -195,7 +195,8 @@ def parse_intent(query: str) -> tuple[ParsedIntent, str]:
                     parsed.clarification_question
                     or "What is the maximum you want to spend on this?"
                 )
-            return parsed, "anthropic"
+            return parsed, result.mode
         except Exception:  # malformed structured output -> deterministic path
             pass
     return parse_intent_deterministic(query), "deterministic"
+
