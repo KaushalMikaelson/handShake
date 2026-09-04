@@ -16,10 +16,10 @@ interface NavItem {
 }
 
 const NAV: NavItem[] = [
-  { to: "/buyer", view: "buyer", label: "Buyer", icon: "◈", hint: "Shop with your agent" },
-  { to: "/approvals", view: "approvals", label: "Approvals", icon: "◑", hint: "Decide pending purchases" },
-  { to: "/merchant", view: "merchant", label: "Merchant", icon: "◭", hint: "Growth opportunities" },
-  { to: "/audit", view: "audit", label: "Audit Trail", icon: "≡", hint: "Every decision, explained" },
+  { to: "/buyer", view: "buyer", label: "Buyer Agent", icon: "◈", hint: "Shop with bounded AI" },
+  { to: "/approvals", view: "approvals", label: "Human Approvals", icon: "◑", hint: "Decide pending purchases" },
+  { to: "/merchant", view: "merchant", label: "Merchant Growth", icon: "◭", hint: "Upsell & bundle opportunities" },
+  { to: "/audit", view: "audit", label: "Audit Trail & Drills", icon: "≡", hint: "Immutable event history" },
 ];
 
 export function AppShell({
@@ -41,8 +41,6 @@ export function AppShell({
     api.systemStatus().then(setStatus).catch(() => undefined);
   }, []);
 
-  // Close the user menu on an outside click or Escape - basic menu hygiene
-  // that is conspicuous by its absence when missing.
   useEffect(() => {
     if (!menuOpen) return;
     const onClick = (e: MouseEvent) => {
@@ -68,36 +66,36 @@ export function AppShell({
     <div className="flex min-h-screen">
       {/* -------------------------------------------------- sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-60 flex-col border-r border-line bg-surface
+        className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-line bg-surface shadow-xs
                     transition-transform duration-200 lg:translate-x-0
                     ${navOpen ? "translate-x-0" : "-translate-x-full"}`}
       >
-        <div className="border-b border-line px-4 py-4">
+        <div className="border-b border-line px-5 py-5 flex items-center justify-between">
           <Wordmark />
         </div>
 
-        <nav className="flex-1 space-y-0.5 p-3" aria-label="Main">
+        <nav className="flex-1 space-y-1 p-3.5" aria-label="Main Navigation">
           {visible.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
               onClick={() => setNavOpen(false)}
               className={({ isActive }) =>
-                `group flex items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-all ${
+                `group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold transition-all ${
                   isActive
-                    ? "bg-brand/10 font-medium text-brand ring-1 ring-inset ring-brand/20"
+                    ? "bg-brand/12 text-brand ring-1 ring-brand/30 shadow-sm"
                     : "text-body hover:bg-raised hover:text-strong"
                 }`
               }
             >
               {({ isActive }) => (
                 <>
-                  <span className={`w-4 text-center text-sm ${isActive ? "text-brand" : "text-subtle"}`}>
+                  <span className={`w-5 text-center text-base ${isActive ? "text-brand" : "text-subtle"}`}>
                     {item.icon}
                   </span>
                   <span className="flex-1">{item.label}</span>
                   {item.view === "approvals" && pendingApprovals > 0 && (
-                    <span className="animate-pulse-ring flex h-4 min-w-4 items-center justify-center rounded-full bg-warn px-1 text-[10px] font-bold text-white">
+                    <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-warn px-1.5 text-2xs font-extrabold text-white shadow-xs">
                       {pendingApprovals}
                     </span>
                   )}
@@ -107,38 +105,45 @@ export function AppShell({
           ))}
         </nav>
 
-        {/* integration mode - so a demo can never quietly overclaim */}
+        {/* integration mode badges */}
         {status && (
-          <div className="space-y-1.5 border-t border-line p-3">
+          <div className="space-y-2 border-t border-line p-4 bg-raised/40">
+            <span className="label text-2xs block">System Status</span>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-2xs text-subtle">Payments</span>
+              <span className="text-2xs font-semibold text-subtle">Razorpay</span>
               <Tooltip label={status.payments.note}>
-                <Pill tone={status.payments.live ? "ok" : "warn"}>{status.payments.mode}</Pill>
+                <Pill tone={status.payments.live ? "ok" : "warn"}>
+                  <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse mr-1 inline-block" />
+                  {status.payments.mode}
+                </Pill>
               </Tooltip>
             </div>
             <div className="flex items-center justify-between gap-2">
-              <span className="text-2xs text-subtle">Agents</span>
+              <span className="text-2xs font-semibold text-subtle">LLM Engine</span>
               <Tooltip label={status.llm.note}>
-                <Pill tone={status.llm.live ? "ok" : "warn"}>{status.llm.mode}</Pill>
+                <Pill tone={status.llm.live ? "ok" : "warn"}>
+                  <span className="h-1.5 w-1.5 rounded-full bg-current animate-pulse mr-1 inline-block" />
+                  {status.llm.mode}
+                </Pill>
               </Tooltip>
             </div>
           </div>
         )}
 
         {/* -------------------------------------------- user menu */}
-        <div ref={menuRef} className="relative border-t border-line p-3">
+        <div ref={menuRef} className="relative border-t border-line p-3.5">
           <button
             onClick={() => setMenuOpen((o) => !o)}
             aria-expanded={menuOpen}
             aria-haspopup="menu"
-            className="flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left transition hover:bg-raised"
+            className="flex w-full items-center gap-3 rounded-xl p-2 text-left transition hover:bg-raised"
           >
-            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-brand/15 text-2xs font-bold text-brand">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-brand/15 text-xs font-bold text-brand shadow-sm">
               {user?.name?.slice(0, 2).toUpperCase()}
             </span>
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-xs font-medium text-strong">{user?.name}</span>
-              <span className="block truncate text-2xs capitalize text-subtle">{user?.role}</span>
+              <span className="block truncate text-xs font-bold text-strong">{user?.name}</span>
+              <span className="block truncate text-2xs capitalize font-medium text-subtle">{user?.role} Role</span>
             </span>
             <span className="text-2xs text-subtle">{menuOpen ? "▾" : "▴"}</span>
           </button>
@@ -146,9 +151,9 @@ export function AppShell({
           {menuOpen && (
             <div
               role="menu"
-              className="absolute bottom-full left-3 right-3 mb-1 animate-fade-up overflow-hidden rounded-lg border border-line bg-surface shadow-lift"
+              className="absolute bottom-full left-3 right-3 mb-2 animate-fade-up overflow-hidden rounded-xl border border-line bg-surface shadow-lg"
             >
-              <p className="truncate border-b border-line px-3 py-2 font-mono text-2xs text-subtle">
+              <p className="truncate border-b border-line px-3.5 py-2.5 font-mono text-2xs text-subtle">
                 {user?.email}
               </p>
               <button
@@ -157,18 +162,18 @@ export function AppShell({
                   toggle();
                   setMenuOpen(false);
                 }}
-                className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-body transition hover:bg-raised"
+                className="flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-xs font-medium text-body transition hover:bg-raised"
               >
                 <span className="w-4 text-center">{theme === "dark" ? "☀" : "☾"}</span>
-                {theme === "dark" ? "Light mode" : "Dark mode"}
+                {theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
               </button>
               <button
                 role="menuitem"
                 onClick={handleLogout}
-                className="flex w-full items-center gap-2 border-t border-line px-3 py-2 text-left text-xs text-danger transition hover:bg-danger/8"
+                className="flex w-full items-center gap-2.5 border-t border-line px-3.5 py-2.5 text-left text-xs font-semibold text-danger transition hover:bg-danger/10"
               >
                 <span className="w-4 text-center">⏻</span>
-                Sign out
+                Sign Out
               </button>
             </div>
           )}
@@ -177,33 +182,32 @@ export function AppShell({
 
       {navOpen && (
         <div
-          className="fixed inset-0 z-30 bg-black/40 lg:hidden"
+          className="fixed inset-0 z-30 bg-black/50 backdrop-blur-xs lg:hidden"
           onClick={() => setNavOpen(false)}
           aria-hidden="true"
         />
       )}
 
       {/* -------------------------------------------------- content */}
-      <div className="flex min-w-0 flex-1 flex-col lg:ml-60">
-        <header className="sticky top-0 z-20 flex items-center gap-3 border-b border-line bg-canvas/85 px-4 py-2.5 backdrop-blur lg:hidden">
-          <button
-            onClick={() => setNavOpen(true)}
-            className="btn-ghost btn-sm"
-            aria-label="Open navigation"
-          >
-            ☰
-          </button>
-          <Wordmark />
+      <div className="flex min-w-0 flex-1 flex-col lg:ml-64">
+        <header className="sticky top-0 z-20 flex items-center justify-between border-b border-line bg-canvas/90 px-5 py-3.5 backdrop-blur-md lg:hidden">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setNavOpen(true)}
+              className="btn-ghost btn-sm"
+              aria-label="Open navigation"
+            >
+              ☰
+            </button>
+            <Wordmark />
+          </div>
         </header>
 
-        <main className="mx-auto w-full max-w-7xl flex-1 p-4 sm:p-6">{children}</main>
+        <main className="mx-auto w-full max-w-7xl flex-1 p-5 sm:p-7">{children}</main>
 
-        <footer className="mx-auto w-full max-w-7xl px-4 pb-6 sm:px-6">
-          <p className="text-2xs leading-relaxed text-subtle">
-            <strong className="text-body">Architectural rule:</strong> the LLM has no tool,
-            function, or route that reaches the payment gateway. The only interfaces between the
-            AI layer and money are the permission check and the policy engine — both plain
-            Python, with no model in the loop.
+        <footer className="mx-auto w-full max-w-7xl px-5 pb-7 sm:px-7">
+          <p className="text-2xs leading-relaxed text-subtle border-t border-line pt-4 font-medium">
+            <strong className="text-strong font-bold">Architectural Guarantee:</strong> The LLM has zero direct route to payment execution APIs. Every transaction is bounded, policy-checked, and deterministically verified in pure Python before invoking Razorpay.
           </p>
         </footer>
       </div>

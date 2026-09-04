@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -29,6 +30,15 @@ import httpx
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _clean_json_text(text: str) -> str:
+    """Clean markdown code fences from model outputs before JSON parsing."""
+    t = text.strip()
+    if t.startswith("```"):
+        t = re.sub(r"^```(?:json)?\s*", "", t, flags=re.IGNORECASE)
+        t = re.sub(r"\s*```$", "", t)
+    return t.strip()
 
 
 @dataclass
@@ -134,26 +144,17 @@ class LLMClient:
 
         if self._genai_client is not None:
             try:
-                # Primary path: official google-genai Client interactions
-                if hasattr(self._genai_client, "interactions"):
-                    interaction = self._genai_client.interactions.create(
-                        model=settings.gemini_model,
-                        input=full_prompt,
-                    )
-                    text = interaction.output_text.strip()
-                else:
-                    from google.genai import types
+                from google.genai import types
 
-                    response = self._genai_client.models.generate_content(
-                        model=settings.gemini_model,
-                        contents=full_prompt,
-                        config=types.GenerateContentConfig(
-                            response_mime_type="application/json",
-                            temperature=0.1,
-                        ),
-                    )
-                    text = response.text.strip()
-
+                response = self._genai_client.models.generate_content(
+                    model=settings.gemini_model,
+                    contents=full_prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        temperature=0.1,
+                    ),
+                )
+                text = _clean_json_text(response.text or "")
                 parsed_data = json.loads(text)
                 if isinstance(parsed_data, dict):
                     return LLMResult(data=parsed_data, mode="gemini")
@@ -193,7 +194,8 @@ class LLMClient:
             if not candidates:
                 return LLMResult(data={}, mode="deterministic", error="gemini_no_candidates")
 
-            text = candidates[0]["content"]["parts"][0]["text"].strip()
+            raw_text = candidates[0]["content"]["parts"][0]["text"]
+            text = _clean_json_text(raw_text)
             parsed_data = json.loads(text)
             if isinstance(parsed_data, dict):
                 return LLMResult(data=parsed_data, mode="gemini")

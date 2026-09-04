@@ -3,145 +3,126 @@
 @tailwind utilities;
 
 /* ---------------------------------------------------------------------------
-   Design tokens.
-
-   Every colour is defined once here as an RGB triple and consumed through
-   Tailwind. Light is the base; the dark block redefines the same names, so no
-   component ever needs a `dark:` variant for colour - which is what keeps the
-   two themes from drifting apart.
+   Design tokens & Theme variables.
 --------------------------------------------------------------------------- */
 @layer base {
   :root {
-    --canvas: 248 249 252;
+    --canvas: 246 248 252;
     --surface: 255 255 255;
-    --raised: 244 246 250;
-    --line: 226 230 238;
-    --text-strong: 15 20 35;
-    --text-body: 55 63 84;
-    --text-subtle: 122 132 155;
-    --brand: 59 91 219;
-    --brand-soft: 236 240 254;
-    --ok: 13 148 96;
-    --warn: 181 111 8;
-    --danger: 201 51 51;
+    --raised: 241 245 252;
+    --line: 224 231 245;
+    --text-strong: 15 23 42;
+    --text-body: 51 65 85;
+    --text-subtle: 100 116 139;
+    --brand: 79 70 229;
+    --brand-soft: 238 242 255;
+    --ok: 16 185 129;
+    --warn: 245 158 11;
+    --danger: 239 68 68;
   }
 
   [data-theme="dark"] {
-    --canvas: 9 12 22;
-    --surface: 18 23 38;
-    --raised: 26 32 51;
-    --line: 39 47 70;
-    --text-strong: 238 241 248;
-    --text-body: 188 196 214;
-    --text-subtle: 130 141 166;
-    --brand: 122 154 255;
-    --brand-soft: 27 38 74;
-    --ok: 52 199 137;
-    --warn: 240 176 63;
-    --danger: 244 116 116;
+    --canvas: 11 15 25;
+    --surface: 19 25 41;
+    --raised: 28 36 58;
+    --line: 41 53 82;
+    --text-strong: 248 250 252;
+    --text-body: 203 213 225;
+    --text-subtle: 148 163 184;
+    --brand: 99 102 241;
+    --brand-soft: 30 38 72;
+    --ok: 52 211 153;
+    --warn: 251 191 36;
+    --danger: 248 113 113;
   }
 
-  /* Default border colour for every element, so components can write
-     `border` without repeating the colour. Plain CSS rather than @apply:
-     a universal selector should not depend on utility generation. */
   * {
     border-color: rgb(var(--line));
   }
 
   html {
     -webkit-text-size-adjust: 100%;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
   }
 
   body {
-    @apply bg-canvas text-body antialiased;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    @apply bg-canvas text-body antialiased selection:bg-brand/20 selection:text-strong;
   }
 
-  /* A single, consistent focus ring everywhere - keyboard users get a real
-     affordance, mouse users are not distracted by it. */
   :focus-visible {
     @apply outline-none ring-2 ring-brand/60 ring-offset-2 ring-offset-canvas;
   }
 
-  ::selection {
-    @apply bg-brand/25 text-strong;
-  }
-
   ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
+    width: 8px;
+    height: 8px;
   }
   ::-webkit-scrollbar-track {
     @apply bg-transparent;
   }
   ::-webkit-scrollbar-thumb {
-    @apply rounded-full border-4 border-solid border-transparent bg-subtle/30 bg-clip-padding;
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    @apply bg-subtle/50;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-      animation-duration: 0.01ms !important;
-      animation-iteration-count: 1 !important;
-      transition-duration: 0.01ms !important;
-    }
+    @apply rounded-full bg-subtle/30 hover:bg-subtle/50;
   }
 }
 
 @layer components {
   .card {
-    @apply rounded-xl border border-line bg-surface shadow-card;
+    @apply rounded-xl border border-line bg-surface shadow-sm transition-all duration-200 hover:shadow-md;
   }
 
   .label {
-    @apply text-2xs font-semibold uppercase tracking-wider text-subtle;
+    @apply text-2xs font-bold uppercase tracking-wider text-subtle;
   }
 
   .btn {
-    @apply inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-2
-           text-sm font-medium transition-all duration-150
-           disabled:pointer-events-none disabled:opacity-50;
+    @apply inline-flex items-center justify-center gap-2 rounded-lg px-4 py-2.5
+           text-sm font-semibold transition-all duration-150 cursor-pointer
+           active:scale-[0.98] disabled:pointer-events-none disabled:opacity-50;
   }
   .btn-primary {
-    @apply btn bg-brand text-white shadow-sm hover:brightness-110 active:brightness-95;
+    @apply btn bg-brand text-white shadow-md shadow-brand/20 hover:bg-brand/90 hover:shadow-brand/35;
   }
   .btn-secondary {
-    @apply btn border border-line bg-surface text-body hover:bg-raised hover:text-strong;
+    @apply btn border border-line bg-surface text-strong hover:bg-raised hover:border-brand/40;
   }
   .btn-danger {
-    @apply btn border border-danger/40 bg-danger/5 text-danger hover:bg-danger/10;
+    @apply btn border border-danger/30 bg-danger/10 text-danger hover:bg-danger/20 hover:border-danger/60;
   }
   .btn-ghost {
     @apply btn text-subtle hover:bg-raised hover:text-strong;
   }
   .btn-sm {
-    @apply px-2.5 py-1.5 text-xs;
+    @apply px-3 py-1.5 text-xs;
   }
 
   .input {
-    @apply w-full rounded-lg border border-line bg-surface px-3 py-2 text-sm
-           text-strong placeholder:text-subtle/70
-           transition-colors focus:border-brand focus:outline-none
-           focus:ring-2 focus:ring-brand/25;
+    @apply w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-sm
+           text-strong placeholder:text-subtle/60 shadow-inner
+           transition-all focus:border-brand focus:outline-none
+           focus:ring-2 focus:ring-brand/20;
   }
 
   .pill {
-    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5
-           text-2xs font-semibold leading-4;
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1
+           text-2xs font-bold uppercase tracking-wider leading-none shadow-sm;
   }
 
-  /* Loading placeholder that mirrors the shape of the content it replaces,
-     so the layout does not jump when data arrives. */
   .skeleton {
-    @apply relative overflow-hidden rounded-md bg-raised;
+    @apply relative overflow-hidden rounded-lg bg-raised;
   }
   .skeleton::after {
     @apply absolute inset-0 -translate-x-full animate-shimmer bg-gradient-to-r
-           from-transparent via-white/10 to-transparent;
+           from-transparent via-white/15 to-transparent;
     content: "";
   }
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 1.5s infinite;
 }

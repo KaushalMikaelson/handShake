@@ -17,7 +17,13 @@ export function formatINR(paise: number | null | undefined): string {
 }
 
 export function formatTime(iso: string): string {
-  const d = new Date(iso);
+  if (!iso) return "—";
+  // Timestamps from UTC (e.g. SQLite naive ISO strings) might omit timezone designators.
+  // Without a timezone suffix, JS Date constructor interprets the string as local time.
+  const normalized =
+    iso.endsWith("Z") || /[+-]\d{2}(?::?\d{2})?$/.test(iso) ? iso : iso + "Z";
+  const d = new Date(normalized);
+  if (isNaN(d.getTime())) return iso;
   return d.toLocaleTimeString("en-IN", {
     hour: "2-digit",
     minute: "2-digit",
