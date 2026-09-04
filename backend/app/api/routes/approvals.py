@@ -11,6 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import current_user
+from app.config import settings
 from app.database import get_db
 from app.enums import AgentId, ApprovalStatus, AuditAction, AuditStatus, IntentStatus, UserRole
 from app.models import ApprovalRequest, PurchaseIntent, User
@@ -134,4 +135,5 @@ def decide(
         approval=_approval_out(approval),
         transaction=txn_out,
         razorpay_called=True,
+        razorpay_key_id=settings.razorpay_key_id if settings.razorpay_live_mode else None,
     )

@@ -1,11 +1,20 @@
-"""Buyer-facing endpoints: shop, policy, state."""
-from fastapi import APIRouter, Depends
+"""Buyer-facing endpoints: shop, policy, state, payment verification."""
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.api.deps import current_buyer, current_user
+from app.config import settings
 from app.database import get_db
-from app.enums import AgentId, AuditAction, AutonomyLevel
-from app.models import Buyer, User
+from app.enums import (
+    AgentId,
+    AuditAction,
+    AuditStatus,
+    AutonomyLevel,
+    IntentStatus,
+    TransactionStatus,
+)
+from app.models import Buyer, PurchaseIntent, Transaction, User
+from app.payments.razorpay_service import get_payment_client
 from app.policies.permission import BUYER_AGENT_PERMISSIONS
 from app.schemas.agents import (
     BuyerPolicyOut,
@@ -13,9 +22,10 @@ from app.schemas.agents import (
     BuyerStateOut,
     ShoppingRequest,
 )
-from app.schemas.commerce import ShopResponse
+from app.schemas.commerce import ShopResponse, VerifyPaymentRequest
 from app.services import audit, ledger
-from app.services.orchestrator import run_shopping_flow
+from app.services.money import format_inr
+from app.services.orchestrator import _intent_out, _transaction_out, run_shopping_flow
 
 router = APIRouter(prefix="/buyer", tags=["buyer"])
 
@@ -91,3 +101,99 @@ def update_policy(
         input_reference={"before": before, "after": changes},
     )
     return _policy_out(buyer)
+
+
+@router.post(
+    "/verify-payment",
+    response_model=ShopResponse,
+    summary="Verify Razorpay payment signature and capture spend",
+)
+def verify_payment(
+    payload: VerifyPaymentRequest,
+    db: Session = Depends(get_db),
+    buyer: Buyer = Depends(current_buyer),
+) -> ShopResponse:
+    txn = db.get(Transaction, payload.transaction_id)
+    if txn is None or txn.buyer_id != buyer.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Transaction not found")
+
+    intent = db.get(PurchaseIntent, txn.purchase_intent_id)
+    if intent is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Purchase intent not found")
+
+    # Idempotent return if already captured
+    if txn.status == TransactionStatus.CAPTURED:
+        return ShopResponse(
+            status="completed",
+            stage="payment",
+            message=f"Payment captured. {format_inr(intent.amount)} paid to the merchant.",
+            intent=_intent_out(intent),
+            transaction=_transaction_out(txn),
+            razorpay_called=True,
+            razorpay_key_id=settings.razorpay_key_id if settings.razorpay_live_mode else None,
+        )
+
+    client = get_payment_client()
+    is_valid = client.verify_payment(
+        order_id=payload.razorpay_order_id,
+        payment_id=payload.razorpay_payment_id,
+        signature=payload.razorpay_signature,
+    )
+
+    if not is_valid:
+        txn.status = TransactionStatus.FAILED
+        txn.failure_reason = "Razorpay payment signature verification failed."
+        intent.status = IntentStatus.FAILED
+        db.commit()
+        audit.record(
+            db,
+            agent_id=AgentId.RAZORPAY,
+            action=AuditAction.INVALID_REQUEST,
+            reason=(
+                f"Signature verification failed for order {payload.razorpay_order_id}, "
+                f"payment {payload.razorpay_payment_id}."
+            ),
+            purchase_intent_id=intent.id,
+            status=AuditStatus.FAILED,
+        )
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Invalid payment signature.")
+
+    txn.razorpay_order_id = payload.razorpay_order_id
+    txn.razorpay_payment_id = payload.razorpay_payment_id
+    txn.status = TransactionStatus.CAPTURED
+    intent.status = IntentStatus.COMPLETED
+
+    ledger.commit_spend(
+        db,
+        buyer_id=intent.buyer_id,
+        purchase_intent_id=intent.id,
+        amount=txn.amount,
+    )
+    db.commit()
+
+    audit.record(
+        db,
+        agent_id=AgentId.RAZORPAY,
+        action=AuditAction.PAYMENT_CONFIRMED,
+        reason=(
+            f"Payment {payload.razorpay_payment_id} captured and signature verified "
+            f"for order {payload.razorpay_order_id}."
+        ),
+        purchase_intent_id=intent.id,
+        output_reference={
+            "order_id": payload.razorpay_order_id,
+            "payment_id": payload.razorpay_payment_id,
+            "amount": txn.amount,
+        },
+    )
+
+    return ShopResponse(
+        status="completed",
+        stage="payment",
+        message=f"Payment captured. {format_inr(intent.amount)} paid to the merchant.",
+        intent=_intent_out(intent),
+        transaction=_transaction_out(txn),
+        razorpay_called=True,
+        razorpay_key_id=settings.razorpay_key_id if settings.razorpay_live_mode else None,
+    )
+

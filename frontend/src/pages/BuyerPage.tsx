@@ -61,8 +61,74 @@ const CATEGORIES = [
   { id: "gaming", label: "🎮 Gaming Gear" },
   { id: "wearables", label: "⌚ Wearables" },
   { id: "smart_home", label: "🏠 Smart Home" },
-  { id: "accessories", label: "🔌 Bonus Companions" },
 ];
+
+function openRazorpayCheckout({
+  shopResponse,
+  onSuccess,
+  onFailure,
+}: {
+  shopResponse: ShopResponse;
+  onSuccess: (finalResponse: ShopResponse) => void;
+  onFailure: (err: string) => void;
+}) {
+  const txn = shopResponse.transaction;
+  const key = shopResponse.razorpay_key_id;
+  if (!txn || !txn.razorpay_order_id || !key) {
+    onFailure("Missing Razorpay order or key information.");
+    return;
+  }
+
+  if (typeof (window as any).Razorpay === "undefined") {
+    onFailure("Razorpay Checkout SDK is not loaded. Please refresh.");
+    return;
+  }
+
+  const options = {
+    key: key,
+    amount: txn.amount,
+    currency: txn.currency || "INR",
+    name: "Bounded AI Commerce",
+    description: shopResponse.recommendation?.selected_name || "Autonomous Agent Purchase",
+    order_id: txn.razorpay_order_id,
+    handler: async function (response: {
+      razorpay_payment_id: string;
+      razorpay_order_id: string;
+      razorpay_signature: string;
+    }) {
+      try {
+        const verified = await api.verifyPayment({
+          transaction_id: txn.id,
+          razorpay_order_id: response.razorpay_order_id,
+          razorpay_payment_id: response.razorpay_payment_id,
+          razorpay_signature: response.razorpay_signature,
+        });
+        onSuccess(verified);
+      } catch (err) {
+        onFailure(err instanceof ApiError ? err.message : String(err));
+      }
+    },
+    prefill: {
+      name: "Aditi Sharma",
+      email: "aditi@example.com",
+      contact: "9876543210",
+    },
+    theme: {
+      color: "#6366f1",
+    },
+    modal: {
+      ondismiss: function () {
+        console.log("Razorpay Checkout modal dismissed");
+      },
+    },
+  };
+
+  const rzp = new (window as any).Razorpay(options);
+  rzp.on("payment.failed", function (response: any) {
+    onFailure(response?.error?.description || "Payment failed at checkout");
+  });
+  rzp.open();
+}
 
 export default function BuyerPage({ onChanged }: { onChanged?: () => void }) {
   const toast = useToast();
@@ -130,10 +196,29 @@ export default function BuyerPage({ onChanged }: { onChanged?: () => void }) {
         await refresh();
         onChanged?.();
 
-        if (r.status === "blocked") toast.error("Purchase blocked", r.policy?.reason);
-        else if (r.status === "completed") toast.success("Payment captured", r.message);
-        else if (r.status === "awaiting_approval") toast.info("Approval needed", r.message);
-        else if (r.status === "needs_clarification") toast.info("Agent needs a budget");
+        if (r.status === "blocked") {
+          toast.error("Purchase blocked", r.policy?.reason);
+        } else if (r.status === "order_created" && r.razorpay_key_id) {
+          toast.info("Razorpay Order Created", "Opening Checkout modal…");
+          openRazorpayCheckout({
+            shopResponse: r,
+            onSuccess: async (finalResponse) => {
+              setResult(finalResponse);
+              await refresh();
+              onChanged?.();
+              toast.success("Payment captured", finalResponse.message);
+            },
+            onFailure: (errMsg) => {
+              toast.error("Checkout incomplete", errMsg);
+            },
+          });
+        } else if (r.status === "completed") {
+          toast.success("Payment captured", r.message);
+        } else if (r.status === "awaiting_approval") {
+          toast.info("Approval needed", r.message);
+        } else if (r.status === "needs_clarification") {
+          toast.info("Agent needs a budget");
+        }
       } catch (e) {
         setError(e instanceof ApiError ? e.message : String(e));
       } finally {
@@ -541,10 +626,26 @@ function ShopResult({
     setDeciding(d);
     try {
       const r = await api.decide(result.approval.approval_id, d);
-      setDecided(r);
-      onDecided();
-      if (d === "approve") toast.success("Approved", r.message);
-      else toast.info("Rejected", "No payment was attempted.");
+      if (d === "approve" && r.status === "order_created" && r.razorpay_key_id) {
+        setDecided(r);
+        toast.info("Razorpay Order Created", "Opening Checkout modal…");
+        openRazorpayCheckout({
+          shopResponse: r,
+          onSuccess: async (finalResponse) => {
+            setDecided(finalResponse);
+            onDecided();
+            toast.success("Payment captured", finalResponse.message);
+          },
+          onFailure: (errMsg) => {
+            toast.error("Checkout incomplete", errMsg);
+          },
+        });
+      } else {
+        setDecided(r);
+        onDecided();
+        if (d === "approve") toast.success("Approved", r.message);
+        else toast.info("Rejected", "No payment was attempted.");
+      }
     } catch (e) {
       toast.error("Could not record decision", e instanceof ApiError ? e.message : undefined);
     } finally {
@@ -565,6 +666,33 @@ function ShopResult({
           <div className="mt-3 flex items-center gap-2 rounded-xl border border-ok/30 bg-ok/10 p-3 text-xs font-semibold text-ok">
             <span>🛡️</span>
             <span>Razorpay was <strong className="underline">zero-called</strong> on this path. Policy engine enforced safety before gateway invocation.</span>
+          </div>
+        )}
+        {final.status === "order_created" && final.razorpay_key_id && (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand/30 bg-brand/10 p-3.5">
+            <div>
+              <p className="text-xs font-bold text-brand">Razorpay Checkout Ready</p>
+              <p className="text-2xs text-subtle font-medium">Order created at gateway. Complete checkout to capture.</p>
+            </div>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                openRazorpayCheckout({
+                  shopResponse: final,
+                  onSuccess: async (finalResponse) => {
+                    setDecided(finalResponse);
+                    onDecided();
+                    toast.success("Payment captured", finalResponse.message);
+                  },
+                  onFailure: (errMsg) => {
+                    toast.error("Checkout incomplete", errMsg);
+                  },
+                });
+              }}
+            >
+              💳 Open Razorpay Checkout
+            </Button>
           </div>
         )}
       </Card>

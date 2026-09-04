@@ -17,6 +17,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.agents.buyer import BuyerAgent
 from app.agents.merchant import MerchantGrowthAgent
 from app.enums import (
@@ -505,6 +506,7 @@ def _apply_policy_and_proceed(
         intent=_intent_out(intent),
         transaction=txn_out,
         razorpay_called=True,
+        razorpay_key_id=settings.razorpay_key_id if settings.razorpay_live_mode else None,
         **common,
     )
 

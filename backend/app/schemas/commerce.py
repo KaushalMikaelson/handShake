@@ -98,3 +98,12 @@ class ShopResponse(BaseModel):
     approval: ApprovalOut | None = None
     transaction: TransactionOut | None = None
     razorpay_called: bool = False
+    razorpay_key_id: str | None = None
+
+
+class VerifyPaymentRequest(BaseModel):
+    transaction_id: str
+    razorpay_order_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str
+

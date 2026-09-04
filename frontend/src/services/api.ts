@@ -182,6 +182,7 @@ export interface ShopResponse {
   approval: Approval | null;
   transaction: Transaction | null;
   razorpay_called: boolean;
+  razorpay_key_id?: string | null;
 }
 
 export interface BuyerState {
@@ -317,6 +318,16 @@ export const api = {
     request<BuyerState["policy"]>("/buyer/policy", {
       method: "PUT",
       body: JSON.stringify(patch),
+    }),
+  verifyPayment: (payload: {
+    transaction_id: string;
+    razorpay_order_id: string;
+    razorpay_payment_id: string;
+    razorpay_signature: string;
+  }) =>
+    request<ShopResponse>("/buyer/verify-payment", {
+      method: "POST",
+      body: JSON.stringify(payload),
     }),
 
   approvals: () => request<Approval[]>("/approvals"),

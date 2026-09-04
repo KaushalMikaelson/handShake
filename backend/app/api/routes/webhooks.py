@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.payments.webhook import handle_webhook
 
-router = APIRouter(prefix="/webhooks", tags=["webhooks"])
+router = APIRouter(prefix="/webhook", tags=["webhooks"])
 
 
 @router.post("/razorpay")
