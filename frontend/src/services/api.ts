@@ -70,6 +70,7 @@ export interface Product {
   attributes: string[];
   bundle_eligible: boolean;
   max_discount_pct: number;
+  companion_product_ids?: string[];
 }
 
 export interface Candidate {

@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { api, ApiError, type BuyerState, type ShopResponse } from "../services/api";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { api, ApiError, type BuyerState, type Product, type ShopResponse } from "../services/api";
 import { formatINR } from "../services/format";
 import { useToast } from "../context/ToastContext";
 import {
@@ -16,34 +16,34 @@ import {
 } from "../components/ui";
 import { PolicyReport } from "../components/PolicyReport";
 
-/** Scripted prompts so every demo beat triggers reliably (PRD 5.7 Q4). */
+/** Scripted prompts to test key agent behaviors and demo beats. */
 const SCRIPTS = [
   {
-    label: "Auto-purchase",
-    badge: "under ₹2,000",
-    query: "Buy me a braided aux cable for my headphones, budget Rs 1000",
-    hint: "Passes policy and sits below auto-purchase threshold — agent pays automatically.",
+    label: "Auto-purchase with Bundle",
+    badge: "under ₹5,000",
+    query: "Buy me boAt Rockerz 551ANC wireless headphones, budget Rs 4500",
+    hint: "Within auto-buy threshold — agent automatically pairs Hardshell Case bundle and executes.",
     tagColor: "bg-ok/15 text-ok border-ok/30",
   },
   {
-    label: "Approval gate",
-    badge: "₹8,999",
-    query: "Buy me wireless noise cancelling headphones under Rs 10,000, prefer Sony",
-    hint: "Above ₹5,000 threshold — requires your explicit human approval.",
+    label: "Approval Gate with Bundle",
+    badge: "₹29,990",
+    query: "Buy me Sony WH-1000XM5 premium noise cancelling headphones, budget Rs 35,000",
+    hint: "Above ₹5,000 approval limit — agent proposes companion stand bundle & requests human sign-off.",
     tagColor: "bg-warn/15 text-warn border-warn/30",
   },
   {
-    label: "Blocked by policy",
+    label: "Blocked by Policy",
     badge: "over limit",
-    query: "Buy premium Sennheiser wireless headphones, budget up to Rs 20,000",
-    hint: "₹11,999 exceeds ₹10,000 max transaction cap — Razorpay zero-called.",
+    query: "Buy ASUS ROG Zephyrus G14 OLED Gaming Laptop, budget up to Rs 2,50,000",
+    hint: "Exceeds ₹2,00,000 max transaction cap — Razorpay zero-called and blocked safely.",
     tagColor: "bg-danger/15 text-danger border-danger/30",
   },
   {
-    label: "Needs clarification",
+    label: "Needs Clarification",
     badge: "no budget",
     query: "Buy me some good headphones",
-    hint: "No budget stated — agent asks instead of inventing one.",
+    hint: "No budget stated — agent halts and asks for budget clarification instead of guessing.",
     tagColor: "bg-brand/15 text-brand border-brand/30",
   },
 ];
@@ -54,22 +54,70 @@ const AUTONOMY = [
   { value: "L3_BOUNDED_AUTO", label: "Bounded auto-buy", detail: "Buy small amounts alone" },
 ];
 
+const CATEGORIES = [
+  { id: "all", label: "All Items" },
+  { id: "electronics", label: "🎧 Audio & Video" },
+  { id: "computing", label: "💻 Laptops & Peripherals" },
+  { id: "gaming", label: "🎮 Gaming Gear" },
+  { id: "wearables", label: "⌚ Wearables" },
+  { id: "smart_home", label: "🏠 Smart Home" },
+  { id: "accessories", label: "🔌 Bonus Companions" },
+];
+
 export default function BuyerPage({ onChanged }: { onChanged?: () => void }) {
   const toast = useToast();
   const [state, setState] = useState<BuyerState | null>(null);
+  const [catalog, setCatalog] = useState<Product[]>([]);
   const [query, setQuery] = useState(SCRIPTS[0].query);
   const [result, setResult] = useState<ShopResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [acceptBundle, setAcceptBundle] = useState(false);
+  const [acceptBundle, setAcceptBundle] = useState(true);
+
+  // Search selector state
+  const [selectorOpen, setSelectorOpen] = useState(false);
+  const [searchFilter, setSearchFilter] = useState("");
+  const [selectedCat, setSelectedCat] = useState("all");
+  const selectorRef = useRef<HTMLDivElement>(null);
 
   const refresh = useCallback(
     () => api.buyerState().then(setState).catch(() => undefined),
     [],
   );
+
   useEffect(() => {
     refresh();
+    api.catalog().then((res) => setCatalog(res.products || [])).catch(() => undefined);
   }, [refresh]);
+
+  // Click outside to close selector dropdown
+  useEffect(() => {
+    if (!selectorOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (selectorRef.current && !selectorRef.current.contains(e.target as Node)) {
+        setSelectorOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [selectorOpen]);
+
+  const filteredProducts = useMemo(() => {
+    return catalog.filter((p) => {
+      const matchCat =
+        selectedCat === "all" ||
+        p.category === selectedCat ||
+        (selectedCat === "electronics" && (p.category === "electronics" || p.attributes.includes("wireless")));
+      const q = searchFilter.toLowerCase().trim();
+      if (!q) return matchCat;
+      const matchText =
+        p.name.toLowerCase().includes(q) ||
+        p.brand.toLowerCase().includes(q) ||
+        p.category.toLowerCase().includes(q) ||
+        p.attributes.some((a) => a.toLowerCase().includes(q));
+      return matchCat && matchText;
+    });
+  }, [catalog, selectedCat, searchFilter]);
 
   const run = useCallback(
     async (q: string) => {
@@ -95,6 +143,20 @@ export default function BuyerPage({ onChanged }: { onChanged?: () => void }) {
     [acceptBundle, refresh, onChanged, toast],
   );
 
+  function selectProduct(p: Product, autoRun = false) {
+    const rawPriceRupees = Math.round(p.price / 100);
+    // Provide a budget that comfortably covers the product + potential companion bundle
+    const headroomMultiplier = p.companion_product_ids && p.companion_product_ids.length > 0 ? 1.3 : 1.15;
+    const budgetRupees = Math.ceil((rawPriceRupees * headroomMultiplier) / 100) * 100;
+    const promptText = `Buy me ${p.name}, budget Rs ${budgetRupees.toLocaleString("en-IN")}`;
+    setQuery(promptText);
+    setSelectorOpen(false);
+    toast.info("Product Selected", `Loaded prompt for ${p.name}`);
+    if (autoRun) {
+      run(promptText);
+    }
+  }
+
   async function setAutonomy(level: string) {
     try {
       await api.updatePolicy({ autonomy_level: level });
@@ -106,7 +168,7 @@ export default function BuyerPage({ onChanged }: { onChanged?: () => void }) {
   }
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[20rem_1fr]">
+    <div className="grid gap-6 lg:grid-cols-[20rem_1fr] xl:grid-cols-[22rem_1fr] items-start">
       {/* ---------------------------- left rail ---------------------------- */}
       <div className="space-y-5">
         <Card title="Agent status" subtitle={state ? `Acting for ${state.name}` : undefined}>
@@ -221,7 +283,136 @@ export default function BuyerPage({ onChanged }: { onChanged?: () => void }) {
 
       {/* ---------------------------- main column ---------------------------- */}
       <div className="space-y-5">
-        <Card title="Shopping request" subtitle="Describe what you want to buy in natural language">
+        <Card
+          title="Shopping request"
+          subtitle="Describe what you want to buy in natural language, or choose from the 60+ item catalog"
+          right={
+            catalog.length > 0 && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-brand/10 border border-brand/20 px-2.5 py-1 text-2xs font-bold text-brand">
+                <span>📦</span> {catalog.length} Products in Catalog
+              </span>
+            )
+          }
+        >
+          {/* Inventory Quick-Pick Selector */}
+          <div ref={selectorRef} className="relative mb-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+              <button
+                type="button"
+                onClick={() => setSelectorOpen((o) => !o)}
+                className="inline-flex items-center gap-2 rounded-lg border border-brand/40 bg-brand/5 px-3 py-1.5 text-xs font-bold text-brand transition hover:bg-brand/10 hover:border-brand"
+              >
+                <span>🔍</span>
+                <span>{selectorOpen ? "Close Product Selector" : "Browse & Pick from 60+ Products…"}</span>
+                <span className="text-2xs">{selectorOpen ? "▴" : "▾"}</span>
+              </button>
+
+              <span className="text-2xs text-subtle font-medium hidden sm:inline">
+                🎁 Companion bonus bundles auto-attach when available
+              </span>
+            </div>
+
+            {selectorOpen && (
+              <div className="absolute left-0 right-0 top-full z-30 mt-1 max-h-96 overflow-hidden rounded-xl border border-line bg-surface shadow-xl flex flex-col animate-fade-in">
+                {/* Search & Category Filter Toolbar */}
+                <div className="border-b border-line p-3 bg-raised/50 space-y-2">
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={searchFilter}
+                      onChange={(e) => setSearchFilter(e.target.value)}
+                      placeholder="Filter 60+ products by name, brand, or feature (e.g. Sony, MacBook, Gaming, ANC)…"
+                      className="input pl-8 text-xs h-9"
+                      autoFocus
+                    />
+                    <span className="absolute left-2.5 top-2.5 text-subtle text-xs">🔍</span>
+                    {searchFilter && (
+                      <button
+                        onClick={() => setSearchFilter("")}
+                        className="absolute right-2.5 top-2 text-xs text-subtle hover:text-strong"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 text-2xs scrollbar-none">
+                    {CATEGORIES.map((cat) => (
+                      <button
+                        key={cat.id}
+                        onClick={() => setSelectedCat(cat.id)}
+                        className={`whitespace-nowrap rounded-lg px-2.5 py-1 font-semibold transition ${
+                          selectedCat === cat.id
+                            ? "bg-brand text-white shadow-xs"
+                            : "bg-surface text-body hover:bg-raised border border-line"
+                        }`}
+                      >
+                        {cat.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Product List */}
+                <div className="overflow-y-auto max-h-64 p-2 space-y-1.5 divide-y divide-line/30">
+                  {filteredProducts.length === 0 ? (
+                    <div className="py-8 text-center text-xs text-subtle font-medium">
+                      No products found matching "{searchFilter}".
+                    </div>
+                  ) : (
+                    filteredProducts.map((p) => {
+                      const hasCompanions = p.companion_product_ids && p.companion_product_ids.length > 0;
+                      return (
+                        <div
+                          key={p.product_id}
+                          className="group flex flex-wrap items-center justify-between gap-3 rounded-xl p-2.5 pt-3 transition hover:bg-raised/80"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="font-bold text-xs text-strong group-hover:text-brand transition">
+                                {p.name}
+                              </span>
+                              <span className="rounded bg-surface border border-line px-1.5 py-0.5 text-3xs font-semibold text-subtle uppercase">
+                                {p.brand}
+                              </span>
+                            </div>
+                            <div className="mt-1 flex flex-wrap items-center gap-2 text-2xs">
+                              <span className="font-mono font-bold text-brand">{formatINR(p.price)}</span>
+                              <span className="text-subtle">·</span>
+                              <span className="text-subtle capitalize">{p.category}</span>
+                              {hasCompanions && (
+                                <span className="inline-flex items-center gap-1 rounded bg-ok/10 border border-ok/25 px-1.5 py-0.5 text-3xs font-bold text-ok">
+                                  🎁 {p.companion_product_ids?.length} Bonus Pairings
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-2">
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => selectProduct(p, false)}
+                            >
+                              Load Prompt
+                            </Button>
+                            <Button
+                              variant="primary"
+                              size="sm"
+                              onClick={() => selectProduct(p, true)}
+                            >
+                              Shop Now
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           <label htmlFor="shop-query" className="sr-only">
             Shopping request
           </label>
@@ -267,8 +458,8 @@ export default function BuyerPage({ onChanged }: { onChanged?: () => void }) {
           </div>
 
           <div className="mt-5 border-t border-line pt-4">
-            <span className="label block mb-2">Scripted Demo Prompts (Click to test beats)</span>
-            <div className="grid gap-2 sm:grid-cols-2">
+            <span className="label block mb-2.5">Scripted Demo Prompts (Click to test beats)</span>
+            <div className="grid gap-2.5 sm:grid-cols-2">
               {SCRIPTS.map((s) => (
                 <button
                   key={s.label}
@@ -277,10 +468,10 @@ export default function BuyerPage({ onChanged }: { onChanged?: () => void }) {
                     run(s.query);
                   }}
                   disabled={loading}
-                  className="group relative rounded-xl border border-line bg-surface p-3 text-left transition-all
+                  className="group relative flex flex-col justify-between rounded-xl border border-line bg-surface p-3 text-left transition-all
                              hover:border-brand/50 hover:bg-brand/5 hover:shadow-xs disabled:opacity-50"
                 >
-                  <div className="flex items-center justify-between gap-2 mb-1">
+                  <div className="flex items-center justify-between gap-2 mb-1.5 w-full">
                     <span className="text-xs font-bold text-strong group-hover:text-brand">{s.label}</span>
                     <span className={`inline-flex items-center rounded-md border px-1.5 py-0.5 font-mono text-2xs font-bold ${s.tagColor}`}>
                       {s.badge}
@@ -310,7 +501,7 @@ export default function BuyerPage({ onChanged }: { onChanged?: () => void }) {
         {!loading && !result && !error && (
           <Card>
             <Empty icon="◈" title="Ready to Shop">
-              Run the agent to see product evaluation, candidate comparison, policy engine checks, and automated payment execution.
+              Run the agent or pick a product from the 60+ catalog items above to test candidate evaluation, companion bundling discounts, and policy engine verification.
             </Empty>
           </Card>
         )}

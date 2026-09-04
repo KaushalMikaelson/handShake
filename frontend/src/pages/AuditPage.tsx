@@ -141,7 +141,7 @@ export default function AuditPage() {
         )}
       </Card>
 
-      <div className="grid gap-4 xl:grid-cols-[18rem_1fr]">
+      <div className="grid gap-6 lg:grid-cols-[20rem_1fr] items-start">
         <Card
           title="Transactions"
           subtitle={transactions ? `${transactions.length} recorded` : undefined}

@@ -25,6 +25,7 @@ class ProductOut(BaseModel):
     attributes: list[str]
     bundle_eligible: bool
     max_discount_pct: int
+    companion_product_ids: list[str] = Field(default_factory=list)
 
     @classmethod
     def from_product(cls, product: "Product") -> "ProductOut":
@@ -39,6 +40,7 @@ class ProductOut(BaseModel):
             attributes=list(product.attributes or []),
             bundle_eligible=product.bundle_eligible,
             max_discount_pct=product.max_discount_pct,
+            companion_product_ids=list(product.companion_product_ids or []),
         )
 
 
