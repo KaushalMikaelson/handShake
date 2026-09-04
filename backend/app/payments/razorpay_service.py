@@ -153,7 +153,14 @@ class RazorpayService:
                 "notes": notes or {},
                 "payment_capture": 1,
             }
-            return dict(self._client.order.create(data=payload))
+            try:
+                return dict(self._client.order.create(data=payload))
+            except Exception as exc:
+                # The Razorpay SDK raises its own exception hierarchy
+                # (BadRequestError, ServerError, etc.) which our callers
+                # don't know about.  Wrap them so the pipeline's
+                # except PaymentError handler catches them cleanly.
+                raise PaymentError(f"Razorpay API error: {exc}") from exc
 
         # --- simulator ---
         existing_id = self._by_receipt.get(idempotency_key)
