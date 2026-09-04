@@ -31,7 +31,7 @@ back to deterministic local implementations when credentials are absent, and
 docker compose up --build
 
 # Option B — local
-./scripts/dev.sh
+.\scripts\dev.ps1
 ```
 
 | | |
@@ -51,8 +51,8 @@ docker compose up --build
 New to the app? Read the [**User Guide**](docs/USER_GUIDE.md).
 
 ```bash
-./scripts/test.sh              # 128 backend tests + frontend typecheck & build
-python scripts/demo.py         # drives the full 5-minute demo end to end
+.\scripts\test.ps1              # 128 backend tests + frontend typecheck & build
+python scripts\demo.py         # drives the full 5-minute demo end to end
 ```
 
 To use the real gateway, copy `.env.example` to `.env` and add Razorpay

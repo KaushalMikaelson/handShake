@@ -1,6 +1,7 @@
 /** Typed client for the backend. Mirrors the FastAPI OpenAPI contract. */
 
-const BASE = "/api";
+const API_BASE = import.meta.env.VITE_API_URL ? String(import.meta.env.VITE_API_URL).replace(/\/+$/, "") : "";
+const BASE = API_BASE ? `${API_BASE}/api` : "/api";
 
 /** Thrown for any non-2xx response, carrying the status so callers can branch. */
 export class ApiError extends Error {
@@ -30,8 +31,8 @@ export function setUnauthorizedHandler(handler: UnauthorizedHandler) {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
-    // send the httpOnly session cookie
-    credentials: "same-origin",
+    // send the httpOnly session cookie (include allows cross-origin when hosted separately)
+    credentials: "include",
     headers: { "Content-Type": "application/json" },
     ...init,
   });

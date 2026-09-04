@@ -2,7 +2,7 @@
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import (
@@ -59,12 +59,34 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(system.router)
-app.include_router(auth.router)
-app.include_router(catalog.router)
-app.include_router(buyer.router)
-app.include_router(approvals.router)
-app.include_router(merchant.router)
-app.include_router(audit.router)
-app.include_router(webhooks.router)
-app.include_router(drills.router)
+@app.get("/")
+@app.head("/")
+def root():
+    return {
+        "status": "ok",
+        "app": settings.app_name,
+        "docs": "/docs",
+        "health": "/health",
+    }
+
+
+ROUTERS = [
+    system.router,
+    auth.router,
+    catalog.router,
+    buyer.router,
+    approvals.router,
+    merchant.router,
+    audit.router,
+    webhooks.router,
+    drills.router,
+]
+
+# Include routers at both root and /api prefix so direct calls (/api/...) and standard calls (/...) work seamlessly
+api_router = APIRouter(prefix="/api")
+for router in ROUTERS:
+    app.include_router(router)
+    api_router.include_router(router)
+
+app.include_router(api_router)
+

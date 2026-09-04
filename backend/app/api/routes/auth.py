@@ -148,7 +148,7 @@ def logout(
         key=auth_service.COOKIE_NAME,
         path="/",
         httponly=True,
-        samesite="strict",
+        samesite="none" if settings.environment != "development" else "lax",
         secure=settings.environment != "development",
     )
     return MessageOut(detail="Signed out.")
@@ -166,7 +166,7 @@ def logout_all(
         key=auth_service.COOKIE_NAME,
         path="/",
         httponly=True,
-        samesite="strict",
+        samesite="none" if settings.environment != "development" else "lax",
         secure=settings.environment != "development",
     )
     return MessageOut(detail=f"Signed out of {count} session(s).")

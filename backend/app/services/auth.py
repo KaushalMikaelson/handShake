@@ -289,16 +289,15 @@ def cookie_kwargs() -> dict:
     """Session cookie settings.
 
     - httponly: JavaScript cannot read the token, so an XSS bug cannot exfiltrate it.
-    - samesite=strict: the browser never attaches this cookie to a cross-site
-      request, which removes CSRF as a class for every state-changing endpoint.
-      A dashboard has no cross-site entry flow to break, so strict costs nothing.
-    - secure: on outside development, where HTTPS is guaranteed.
+    - samesite=none (in production) / lax (in development) to allow credentials across origins.
+    - secure: True outside development (required for samesite=none over HTTPS).
     """
+    is_prod = settings.environment != "development"
     return {
         "key": COOKIE_NAME,
         "httponly": True,
-        "samesite": "strict",
-        "secure": settings.environment != "development",
+        "samesite": "none" if is_prod else "lax",
+        "secure": is_prod,
         "path": "/",
         "max_age": int(SESSION_TTL.total_seconds()),
     }
