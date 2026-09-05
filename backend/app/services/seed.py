@@ -802,8 +802,8 @@ def seed_if_empty(db: Session) -> bool:
                     "smart_home",
                 ],
                 blocked_categories=["financial_services"],
-                require_approval_above=500_000,    # Rs 5,000
-                allow_automatic_purchase_below=200_000,  # Rs 2,000
+                require_approval_above=1_000_000,    # Rs 10,000
+                allow_automatic_purchase_below=500_000,  # Rs 5,000
                 autonomy_level=AutonomyLevel.BOUNDED_AUTO,
             )
         )
@@ -868,8 +868,8 @@ def create_buyer_profile(db: Session, *, name: str) -> Buyer:
             "smart_home",
         ],
         blocked_categories=["financial_services"],
-        require_approval_above=500_000,          # Rs 5,000
-        allow_automatic_purchase_below=200_000,  # Rs 2,000
+        require_approval_above=1_000_000,          # Rs 10,000
+        allow_automatic_purchase_below=500_000,  # Rs 5,000
         autonomy_level=AutonomyLevel.PREPARE,
     )
     db.add(buyer)

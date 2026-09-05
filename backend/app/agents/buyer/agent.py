@@ -220,20 +220,26 @@ class BuyerAgent:
         if not client.live:
             return None
 
-        lines = []
-        for e in evaluations:
-            status = "ELIGIBLE" if e.eligible else f"REJECTED ({e.rejection_reason})"
-            lines.append(
-                f"- product_id={e.product_id} | {e.name} | {format_inr(e.price)} | {status}"
-            )
+        eligible_evals = [e for e in evaluations if e.eligible]
+        if not eligible_evals:
+            return None
+
+        # Sort by preliminary score and take top candidates to keep token usage compact
+        top_candidates = sorted(eligible_evals, key=lambda e: e.score, reverse=True)[:8]
+
+        lines = [
+            f"- product_id={e.product_id} | {e.name} | {format_inr(e.price)} | "
+            f"Reasons: {', '.join(e.reasons)}"
+            for e in top_candidates
+        ]
         prompt = (
             f"Shopper requirements:\n"
             f"  category: {intent.category}\n"
             f"  budget_max: {format_inr(intent.budget_max) if intent.budget_max else 'not set'}\n"
             f"  preferred_brands: {', '.join(intent.preferred_brands) or 'none'}\n"
             f"  use_case: {intent.use_case}\n\n"
-            f"Candidates:\n" + "\n".join(lines) + "\n\n"
-            "Select the single best ELIGIBLE product and justify it for the shopper."
+            f"Eligible Candidates:\n" + "\n".join(lines) + "\n\n"
+            "Select the single best ELIGIBLE product and write a concise 1-2 sentence justification for the shopper."
         )
         result = client.structured_call(
             system=SYSTEM_PROMPT,

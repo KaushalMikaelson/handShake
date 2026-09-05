@@ -307,7 +307,10 @@ def run_shopping_flow(db: Session, request: ShoppingRequest, buyer: Buyer) -> Sh
         currency=product.currency,
         reasoning=recommendation.justification,
         parsed_intent=parsed.model_dump(),
-        evaluation={"candidates": [c.model_dump() for c in recommendation.candidates]},
+        evaluation={
+            "recommendation": recommendation.model_dump(),
+            "candidates": [c.model_dump() for c in recommendation.candidates],
+        },
         bundle=bundle.model_dump(),
         trust=trust_report.to_dict(),
         status=IntentStatus.CREATED,
@@ -751,4 +754,46 @@ def _handle_timeout(
         "pending_verification",
         f"Payment state is unresolved (gateway says '{gateway_status}'). "
         f"Held for verification rather than retried.",
+    )
+
+
+def _purchase_context_out(db: Session, intent: PurchaseIntent) -> dict:
+    """Rehydrate the shopping context attached to a completed payment response."""
+    return {
+        "parsed_intent": intent.parsed_intent or None,
+        "recommendation": _recommendation_from_intent(db, intent),
+        "bundle": BundleOffer(**intent.bundle) if intent.bundle else None,
+        "trust": TrustOut(**intent.trust) if intent.trust else None,
+        "policy": (
+            PolicyDecisionOut(**intent.policy_result)
+            if intent.policy_result
+            else None
+        ),
+    }
+
+
+def _recommendation_from_intent(db: Session, intent: PurchaseIntent) -> Recommendation | None:
+    evaluation = intent.evaluation or {}
+    stored = evaluation.get("recommendation")
+    if stored:
+        return Recommendation(**stored)
+
+    candidates = evaluation.get("candidates") or []
+    product = db.get(Product, intent.product_id)
+    product_price = product.price if product is not None else intent.amount
+    budget_max = (intent.parsed_intent or {}).get("budget_max")
+    remaining_budget = (
+        max(budget_max - product_price, 0)
+        if isinstance(budget_max, int)
+        else None
+    )
+
+    return Recommendation(
+        selected_product_id=intent.product_id,
+        selected_name=product.name if product is not None else None,
+        amount=product_price,
+        remaining_budget=remaining_budget,
+        justification=intent.reasoning,
+        candidates=candidates,
+        llm_mode=evaluation.get("llm_mode", "deterministic"),
     )

@@ -22,3 +22,15 @@ dist/
 .idea/
 .vscode/
 tsconfig.tsbuildinfo
+
+# logs
+*.log
+.codex-*.log
+backend/.codex-backend.*.log
+frontend/.codex-frontend.*.log
+
+# media & generated assets
+*.avi
+*.mp4
+demo_video_assets/
+handshake_demo_middle_4m20s.avi

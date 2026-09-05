@@ -329,6 +329,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify(payload),
     }),
+  simulateTestPayment: (transactionId: string) =>
+    request<ShopResponse>(`/buyer/simulate-test-payment/${transactionId}`, {
+      method: "POST",
+    }),
+  transactionStatus: (transactionId: string) =>
+    request<{ status: string; transaction: Transaction | null; intent: any }>(
+      `/buyer/transaction/${transactionId}`,
+    ),
 
   approvals: () => request<Approval[]>("/approvals"),
   // The deciding identity comes from the session server-side; there is no

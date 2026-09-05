@@ -29,8 +29,8 @@ class Buyer(Base):
     max_transaction: Mapped[int] = mapped_column(Integer, default=1_000_000)
     allowed_categories: Mapped[list] = mapped_column(JSON, default=lambda: ["electronics"])
     blocked_categories: Mapped[list] = mapped_column(JSON, default=lambda: ["financial_services"])
-    require_approval_above: Mapped[int] = mapped_column(Integer, default=500_000)
-    allow_automatic_purchase_below: Mapped[int] = mapped_column(Integer, default=200_000)
+    require_approval_above: Mapped[int] = mapped_column(Integer, default=1_000_000)
+    allow_automatic_purchase_below: Mapped[int] = mapped_column(Integer, default=500_000)
 
     autonomy_level: Mapped[str] = mapped_column(String(32), default=AutonomyLevel.BOUNDED_AUTO)
 

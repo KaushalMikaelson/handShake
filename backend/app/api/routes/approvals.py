@@ -17,7 +17,12 @@ from app.enums import AgentId, ApprovalStatus, AuditAction, AuditStatus, IntentS
 from app.models import ApprovalRequest, PurchaseIntent, User
 from app.schemas.commerce import ApprovalDecision, ApprovalOut, ShopResponse
 from app.services import audit
-from app.services.orchestrator import _approval_out, _intent_out, execute_payment
+from app.services.orchestrator import (
+    _approval_out,
+    _intent_out,
+    _purchase_context_out,
+    execute_payment,
+)
 
 router = APIRouter(prefix="/approvals", tags=["approvals"])
 
@@ -109,6 +114,7 @@ def decide(
             intent=_intent_out(intent),
             approval=_approval_out(approval),
             razorpay_called=False,
+            **_purchase_context_out(db, intent),
         )
 
     # --- Approve: this is the only human-driven path to the gateway ---
@@ -136,4 +142,5 @@ def decide(
         transaction=txn_out,
         razorpay_called=True,
         razorpay_key_id=settings.razorpay_key_id if settings.razorpay_live_mode else None,
+        **_purchase_context_out(db, intent),
     )

@@ -35,15 +35,23 @@ def system_status():
         "llm": {
             "mode": llm.provider if llm.live else "deterministic",
             "live": llm.live,
-            "model": settings.gemini_model if llm.provider == "gemini" else (settings.anthropic_model if llm.live else None),
+            "model": (
+                settings.groq_model if llm.provider == "groq"
+                else (settings.gemini_model if llm.provider == "gemini"
+                else (settings.anthropic_model if llm.provider == "anthropic" else None))
+            ),
             "note": (
-                f"Gemini structured output active ({settings.gemini_model})."
-                if llm.provider == "gemini"
+                f"Groq structured output active ({settings.groq_model})."
+                if llm.provider == "groq"
                 else (
-                    "Anthropic structured output active."
-                    if llm.live
-                    else "No LLM API key: agents use their deterministic rule-based "
-                         "path. Every guardrail behaves identically either way."
+                    f"Gemini structured output active ({settings.gemini_model})."
+                    if llm.provider == "gemini"
+                    else (
+                        f"Anthropic structured output active ({settings.anthropic_model})."
+                        if llm.provider == "anthropic"
+                        else "No LLM API key: agents use their deterministic rule-based "
+                             "path. Every guardrail behaves identically either way."
+                    )
                 )
             ),
         },

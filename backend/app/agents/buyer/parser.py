@@ -16,12 +16,71 @@ from app.agents.llm import get_llm_client
 from app.schemas.agents import ParsedIntent
 from app.services.money import to_paise
 
+# Map common LLM-returned categories to valid catalog categories
+_CATEGORY_NORMALIZE: dict[str, str] = {
+    "headphones": "electronics",
+    "headphone": "electronics",
+    "earphones": "electronics",
+    "earbuds": "electronics",
+    "earphone": "electronics",
+    "audio": "electronics",
+    "speakers": "electronics",
+    "speaker": "electronics",
+    "tws": "electronics",
+    "laptop": "computing",
+    "laptops": "computing",
+    "computer": "computing",
+    "computers": "computing",
+    "peripherals": "computing",
+    "keyboard": "computing",
+    "mouse": "computing",
+    "monitor": "computing",
+    "watch": "wearables",
+    "watches": "wearables",
+    "smartwatch": "wearables",
+    "fitness": "wearables",
+    "band": "wearables",
+    "gaming": "gaming",
+    "controller": "gaming",
+    "console": "gaming",
+    "smart_home": "smart_home",
+    "smart home": "smart_home",
+    "alexa": "smart_home",
+    "cable": "accessories",
+    "cables": "accessories",
+    "case": "accessories",
+    "cases": "accessories",
+    "cover": "accessories",
+    "adapter": "accessories",
+    "charger": "accessories",
+    "stand": "accessories",
+    # pass-through for valid categories
+    "electronics": "electronics",
+    "accessories": "accessories",
+    "computing": "computing",
+    "wearables": "wearables",
+}
+
+
+def _normalize_category(raw: str | None) -> str | None:
+    """Map an LLM-returned category string to a valid catalog category."""
+    if not raw:
+        return None
+    key = raw.strip().lower()
+    return _CATEGORY_NORMALIZE.get(key, key)
+
+
 INTENT_TOOL_SCHEMA = {
     "type": "object",
     "properties": {
         "category": {
             "type": "string",
-            "description": "Product category, e.g. 'electronics' or 'accessories'.",
+            "description": (
+                "Product category. MUST be one of: 'electronics', 'accessories', "
+                "'computing', 'wearables', 'gaming', 'smart_home'. "
+                "Headphones, earbuds, speakers etc. are 'electronics'. "
+                "Cables, cases, chargers etc. are 'accessories'."
+            ),
         },
         "budget_max": {
             "type": "integer",
@@ -187,6 +246,10 @@ def parse_intent(query: str) -> tuple[ParsedIntent, str]:
     )
     if result.mode != "deterministic" and result.data:
         try:
+            # Normalize the category before validation so the LLM's free-form
+            # label (e.g. "headphones") maps to a valid catalog category.
+            if "category" in result.data:
+                result.data["category"] = _normalize_category(result.data["category"])
             # Pydantic validation at the boundary is what makes trusting this safe
             parsed = ParsedIntent.model_validate(result.data)
             if parsed.budget_max is None:

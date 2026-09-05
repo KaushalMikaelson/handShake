@@ -53,6 +53,52 @@ def test_shop_auto_purchase_completes(client):
     assert body["transaction"]["status"] == "CAPTURED"
 
 
+def test_simulated_payment_response_keeps_purchase_details(client):
+    shop = client.post(
+        "/buyer/shop",
+        json={"query": "Buy me a braided aux cable for my headphones, budget Rs 1000"},
+    ).json()
+
+    body = client.post(
+        f"/buyer/simulate-test-payment/{shop['transaction']['id']}"
+    ).json()
+
+    assert body["status"] == "completed"
+    assert body["transaction"]["status"] == "CAPTURED"
+    assert body["recommendation"]["selected_product_id"] == "prod_cable_aux"
+    assert body["bundle"] is not None
+    assert body["policy"]["decision"] == "AUTO_APPROVE"
+    assert body["trust"]["score"] > 0
+
+
+def test_idempotent_verify_payment_response_keeps_purchase_details(client):
+    shop = client.post(
+        "/buyer/shop",
+        json={"query": "Buy me a braided aux cable for my headphones, budget Rs 1000"},
+    ).json()
+    settled = client.post(
+        f"/buyer/simulate-test-payment/{shop['transaction']['id']}"
+    ).json()
+    txn = settled["transaction"]
+
+    body = client.post(
+        "/buyer/verify-payment",
+        json={
+            "transaction_id": txn["id"],
+            "razorpay_order_id": txn["razorpay_order_id"],
+            "razorpay_payment_id": txn["razorpay_payment_id"],
+            "razorpay_signature": "already-captured",
+        },
+    ).json()
+
+    assert body["status"] == "completed"
+    assert body["transaction"]["status"] == "CAPTURED"
+    assert body["recommendation"]["selected_product_id"] == "prod_cable_aux"
+    assert body["bundle"] is not None
+    assert body["policy"]["decision"] == "AUTO_APPROVE"
+    assert body["trust"]["score"] > 0
+
+
 def test_shop_above_threshold_routes_to_approval(client):
     r = client.post(
         "/buyer/shop",

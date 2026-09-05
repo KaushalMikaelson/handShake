@@ -1,4 +1,5 @@
-"""Buyer-facing endpoints: shop, policy, state, payment verification."""
+import uuid
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
@@ -13,7 +14,7 @@ from app.enums import (
     IntentStatus,
     TransactionStatus,
 )
-from app.models import Buyer, PurchaseIntent, Transaction, User
+from app.models import Buyer, Merchant, PurchaseIntent, Transaction, User
 from app.payments.razorpay_service import get_payment_client
 from app.policies.permission import BUYER_AGENT_PERMISSIONS
 from app.schemas.agents import (
@@ -25,7 +26,12 @@ from app.schemas.agents import (
 from app.schemas.commerce import ShopResponse, VerifyPaymentRequest
 from app.services import audit, ledger
 from app.services.money import format_inr
-from app.services.orchestrator import _intent_out, _transaction_out, run_shopping_flow
+from app.services.orchestrator import (
+    _intent_out,
+    _purchase_context_out,
+    _transaction_out,
+    run_shopping_flow,
+)
 
 router = APIRouter(prefix="/buyer", tags=["buyer"])
 
@@ -131,6 +137,7 @@ def verify_payment(
             transaction=_transaction_out(txn),
             razorpay_called=True,
             razorpay_key_id=settings.razorpay_key_id if settings.razorpay_live_mode else None,
+            **_purchase_context_out(db, intent),
         )
 
     client = get_payment_client()
@@ -195,5 +202,80 @@ def verify_payment(
         transaction=_transaction_out(txn),
         razorpay_called=True,
         razorpay_key_id=settings.razorpay_key_id if settings.razorpay_live_mode else None,
+        **_purchase_context_out(db, intent),
     )
+
+
+@router.get("/transaction/{transaction_id}")
+def get_transaction_status(
+    transaction_id: str,
+    db: Session = Depends(get_db),
+    buyer: Buyer = Depends(current_buyer),
+):
+    txn = db.get(Transaction, transaction_id)
+    if txn is None or txn.buyer_id != buyer.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Transaction not found")
+
+    intent = db.get(PurchaseIntent, txn.purchase_intent_id)
+    return {
+        "status": txn.status,
+        "transaction": _transaction_out(txn) if txn else None,
+        "intent": _intent_out(intent) if intent else None,
+    }
+
+
+@router.post("/simulate-test-payment/{transaction_id}", response_model=ShopResponse)
+def simulate_test_payment(
+    transaction_id: str,
+    db: Session = Depends(get_db),
+    buyer: Buyer = Depends(current_buyer),
+) -> ShopResponse:
+    txn = db.get(Transaction, transaction_id)
+    if txn is None or txn.buyer_id != buyer.id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Transaction not found")
+
+    intent = db.get(PurchaseIntent, txn.purchase_intent_id)
+    if intent is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Purchase intent not found")
+
+    if txn.status != TransactionStatus.CAPTURED:
+        payment_id = f"pay_test_{uuid.uuid4().hex[:12]}"
+        txn.razorpay_payment_id = payment_id
+        txn.status = TransactionStatus.CAPTURED
+        intent.status = IntentStatus.COMPLETED
+        ledger.commit_spend(
+            db,
+            buyer_id=intent.buyer_id,
+            purchase_intent_id=intent.id,
+            amount=txn.amount,
+        )
+        merchant = db.get(Merchant, intent.merchant_id)
+        if merchant is not None:
+            merchant.successful_transactions += 1
+
+        db.commit()
+        audit.record(
+            db,
+            agent_id=AgentId.RAZORPAY,
+            action=AuditAction.PAYMENT_CONFIRMED,
+            reason=f"Test payment {payment_id} automatically captured in test mode.",
+            purchase_intent_id=intent.id,
+            output_reference={
+                "order_id": txn.razorpay_order_id,
+                "payment_id": payment_id,
+                "amount": txn.amount,
+            },
+        )
+
+    return ShopResponse(
+        status="completed",
+        stage="payment",
+        message=f"Payment captured. {format_inr(intent.amount)} paid to the merchant.",
+        intent=_intent_out(intent),
+        transaction=_transaction_out(txn),
+        razorpay_called=True,
+        razorpay_key_id=settings.razorpay_key_id if settings.razorpay_live_mode else None,
+        **_purchase_context_out(db, intent),
+    )
+
 

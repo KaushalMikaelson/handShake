@@ -29,7 +29,7 @@ const SCRIPTS = [
     label: "Approval Gate with Bundle",
     badge: "₹29,990",
     query: "Buy me Sony WH-1000XM5 premium noise cancelling headphones, budget Rs 35,000",
-    hint: "Above ₹5,000 approval limit — agent proposes companion stand bundle & requests human sign-off.",
+    hint: "Above ₹10,000 approval limit — agent proposes companion stand bundle & requests human sign-off.",
     tagColor: "bg-warn/15 text-warn border-warn/30",
   },
   {
@@ -63,14 +63,34 @@ const CATEGORIES = [
   { id: "smart_home", label: "🏠 Smart Home" },
 ];
 
+function mergeShopResponse(previous: ShopResponse | null, next: ShopResponse): ShopResponse {
+  if (!previous) return next;
+  return {
+    ...previous,
+    ...next,
+    clarification_question: next.clarification_question ?? previous.clarification_question,
+    parsed_intent: next.parsed_intent ?? previous.parsed_intent,
+    recommendation: next.recommendation ?? previous.recommendation,
+    bundle: next.bundle ?? previous.bundle,
+    trust: next.trust ?? previous.trust,
+    policy: next.policy ?? previous.policy,
+    intent: next.intent ?? previous.intent,
+    approval: next.approval ?? previous.approval,
+    transaction: next.transaction ?? previous.transaction,
+    razorpay_key_id: next.razorpay_key_id ?? previous.razorpay_key_id,
+  };
+}
+
 function openRazorpayCheckout({
   shopResponse,
   onSuccess,
   onFailure,
+  autoCompleteAfterMs = 2500,
 }: {
   shopResponse: ShopResponse;
   onSuccess: (finalResponse: ShopResponse) => void;
   onFailure: (err: string) => void;
+  autoCompleteAfterMs?: number;
 }) {
   const txn = shopResponse.transaction;
   const key = shopResponse.razorpay_key_id;
@@ -79,55 +99,95 @@ function openRazorpayCheckout({
     return;
   }
 
-  if (typeof (window as any).Razorpay === "undefined") {
-    onFailure("Razorpay Checkout SDK is not loaded. Please refresh.");
-    return;
-  }
+  let completed = false;
+  let pollTimer: ReturnType<typeof setInterval> | null = null;
+  let autoCompleteTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const options = {
-    key: key,
-    amount: txn.amount,
-    currency: txn.currency || "INR",
-    name: "Bounded AI Commerce",
-    description: shopResponse.recommendation?.selected_name || "Autonomous Agent Purchase",
-    order_id: txn.razorpay_order_id,
-    handler: async function (response: {
-      razorpay_payment_id: string;
-      razorpay_order_id: string;
-      razorpay_signature: string;
-    }) {
-      try {
-        const verified = await api.verifyPayment({
-          transaction_id: txn.id,
-          razorpay_order_id: response.razorpay_order_id,
-          razorpay_payment_id: response.razorpay_payment_id,
-          razorpay_signature: response.razorpay_signature,
-        });
-        onSuccess(verified);
-      } catch (err) {
-        onFailure(err instanceof ApiError ? err.message : String(err));
-      }
-    },
-    prefill: {
-      name: "Aditi Sharma",
-      email: "aditi@example.com",
-      contact: "9876543210",
-    },
-    theme: {
-      color: "#6366f1",
-    },
-    modal: {
-      ondismiss: function () {
-        console.log("Razorpay Checkout modal dismissed");
-      },
-    },
+  const cleanup = () => {
+    if (pollTimer) clearInterval(pollTimer);
+    if (autoCompleteTimer) clearTimeout(autoCompleteTimer);
   };
 
-  const rzp = new (window as any).Razorpay(options);
-  rzp.on("payment.failed", function (response: any) {
-    onFailure(response?.error?.description || "Payment failed at checkout");
-  });
-  rzp.open();
+  const handleSuccess = (finalResponse: ShopResponse) => {
+    if (completed) return;
+    completed = true;
+    cleanup();
+    onSuccess(finalResponse);
+  };
+
+  // 1. Webhook polling: every 1.2s check if webhook or server completed the transaction
+  pollTimer = setInterval(async () => {
+    try {
+      const res = await api.transactionStatus(txn.id);
+      if (res.status === "CAPTURED") {
+        const full = await api.simulateTestPayment(txn.id);
+        handleSuccess(full);
+      }
+    } catch {
+      // ignore transient errors
+    }
+  }, 1200);
+
+  // 2. Auto-complete in test mode: automatically simulate success after delay so payment succeeds on its own
+  if (autoCompleteAfterMs > 0) {
+    autoCompleteTimer = setTimeout(async () => {
+      try {
+        const full = await api.simulateTestPayment(txn.id);
+        handleSuccess(full);
+      } catch (err) {
+        console.error("Auto test payment error:", err);
+      }
+    }, autoCompleteAfterMs);
+  }
+
+  if (typeof (window as any).Razorpay !== "undefined") {
+    const options = {
+      key: key,
+      amount: txn.amount,
+      currency: txn.currency || "INR",
+      name: "Bounded AI Commerce",
+      description: shopResponse.recommendation?.selected_name || "Autonomous Agent Purchase",
+      order_id: txn.razorpay_order_id,
+      handler: async function (response: {
+        razorpay_payment_id: string;
+        razorpay_order_id: string;
+        razorpay_signature: string;
+      }) {
+        try {
+          const verified = await api.verifyPayment({
+            transaction_id: txn.id,
+            razorpay_order_id: response.razorpay_order_id,
+            razorpay_payment_id: response.razorpay_payment_id,
+            razorpay_signature: response.razorpay_signature,
+          });
+          handleSuccess(verified);
+        } catch (err) {
+          onFailure(err instanceof ApiError ? err.message : String(err));
+        }
+      },
+      prefill: {
+        name: "Aditi Sharma",
+        email: "aditi@example.com",
+        contact: "9876543210",
+      },
+      theme: {
+        color: "#6366f1",
+      },
+      modal: {
+        ondismiss: function () {
+          console.log("Razorpay Checkout modal dismissed");
+          cleanup();
+        },
+      },
+    };
+
+    const rzp = new (window as any).Razorpay(options);
+    rzp.on("payment.failed", function (response: any) {
+      cleanup();
+      onFailure(response?.error?.description || "Payment failed at checkout");
+    });
+    rzp.open();
+  }
 }
 
 export default function BuyerPage({ onChanged }: { onChanged?: () => void }) {
@@ -203,7 +263,7 @@ export default function BuyerPage({ onChanged }: { onChanged?: () => void }) {
           openRazorpayCheckout({
             shopResponse: r,
             onSuccess: async (finalResponse) => {
-              setResult(finalResponse);
+              setResult((prev) => mergeShopResponse(prev, finalResponse));
               await refresh();
               onChanged?.();
               toast.success("Payment captured", finalResponse.message);
@@ -627,12 +687,12 @@ function ShopResult({
     try {
       const r = await api.decide(result.approval.approval_id, d);
       if (d === "approve" && r.status === "order_created" && r.razorpay_key_id) {
-        setDecided(r);
+        setDecided(mergeShopResponse(result, r));
         toast.info("Razorpay Order Created", "Opening Checkout modal…");
         openRazorpayCheckout({
           shopResponse: r,
           onSuccess: async (finalResponse) => {
-            setDecided(finalResponse);
+            setDecided((prev) => mergeShopResponse(prev ?? result, finalResponse));
             onDecided();
             toast.success("Payment captured", finalResponse.message);
           },
@@ -641,7 +701,7 @@ function ShopResult({
           },
         });
       } else {
-        setDecided(r);
+        setDecided(mergeShopResponse(result, r));
         onDecided();
         if (d === "approve") toast.success("Approved", r.message);
         else toast.info("Rejected", "No payment was attempted.");
@@ -655,7 +715,7 @@ function ShopResult({
   }
 
   const final = decided ?? result;
-  const rec = result.recommendation;
+  const rec = final.recommendation;
 
   return (
     <div className="animate-fade-up space-y-5">
@@ -671,28 +731,48 @@ function ShopResult({
         {final.status === "order_created" && final.razorpay_key_id && (
           <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand/30 bg-brand/10 p-3.5">
             <div>
-              <p className="text-xs font-bold text-brand">Razorpay Checkout Ready</p>
-              <p className="text-2xs text-subtle font-medium">Order created at gateway. Complete checkout to capture.</p>
+              <p className="text-xs font-bold text-brand">⚡ Razorpay Checkout Ready (Test Mode)</p>
+              <p className="text-2xs text-subtle font-medium">Auto-capturing test payment & listening for webhook…</p>
             </div>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => {
-                openRazorpayCheckout({
-                  shopResponse: final,
-                  onSuccess: async (finalResponse) => {
-                    setDecided(finalResponse);
-                    onDecided();
-                    toast.success("Payment captured", finalResponse.message);
-                  },
-                  onFailure: (errMsg) => {
-                    toast.error("Checkout incomplete", errMsg);
-                  },
-                });
-              }}
-            >
-              💳 Open Razorpay Checkout
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={async () => {
+                  if (final.transaction?.id) {
+                    try {
+                      const res = await api.simulateTestPayment(final.transaction.id);
+                      setDecided((prev) => mergeShopResponse(prev ?? result, res));
+                      onDecided();
+                      toast.success("Payment captured", res.message);
+                    } catch {
+                      toast.error("Failed to auto-complete test payment");
+                    }
+                  }
+                }}
+              >
+                ⚡ Auto-Complete Test Payment
+              </Button>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  openRazorpayCheckout({
+                    shopResponse: final,
+                    onSuccess: async (finalResponse) => {
+                      setDecided((prev) => mergeShopResponse(prev ?? result, finalResponse));
+                      onDecided();
+                      toast.success("Payment captured", finalResponse.message);
+                    },
+                    onFailure: (errMsg) => {
+                      toast.error("Checkout incomplete", errMsg);
+                    },
+                  });
+                }}
+              >
+                💳 Re-open Modal
+              </Button>
+            </div>
           </div>
         )}
       </Card>
@@ -774,26 +854,26 @@ function ShopResult({
       )}
 
       {/* Merchant Growth Agent Bundle */}
-      {result.bundle && (
+      {final.bundle && (
         <Card
           title="Merchant Growth Agent"
           right={
-            <Pill tone={result.bundle.offered ? "brand" : "mute"}>
-              {result.bundle.offered
-                ? `Bundle Offer · ${result.bundle.discount_pct}% OFF`
+            <Pill tone={final.bundle.offered ? "brand" : "mute"}>
+              {final.bundle.offered
+                ? `Bundle Offer · ${final.bundle.discount_pct}% OFF`
                 : "No Bundle Offered"}
             </Pill>
           }
         >
-          <p className="text-xs font-medium leading-relaxed text-body">{result.bundle.reasoning}</p>
-          {result.bundle.offered && (
+          <p className="text-xs font-medium leading-relaxed text-body">{final.bundle.reasoning}</p>
+          {final.bundle.offered && (
             <div className="mt-3 flex items-center gap-3 rounded-xl border border-ok/30 bg-ok/10 p-3">
               <span className="text-2xs font-bold text-subtle uppercase">Bundle Savings:</span>
               <span className="font-mono text-xs text-subtle line-through">
-                {formatINR(result.bundle.list_price)}
+                {formatINR(final.bundle.list_price)}
               </span>
               <span className="font-mono text-sm font-bold text-ok">
-                {formatINR(result.bundle.bundle_price)}
+                {formatINR(final.bundle.bundle_price)}
               </span>
             </div>
           )}
@@ -801,9 +881,9 @@ function ShopResult({
       )}
 
       {/* Policy Engine Verdict */}
-      {result.policy && (
+      {final.policy && (
         <Card title="Policy Engine Verdict" subtitle="Deterministic Evaluation — Zero LLM / Zero Network">
-          <PolicyReport policy={result.policy} />
+          <PolicyReport policy={final.policy} />
         </Card>
       )}
 
@@ -865,17 +945,17 @@ function ShopResult({
       )}
 
       {/* Merchant Trust */}
-      {result.trust && (
+      {final.trust && (
         <Card
           title="Merchant Trust Score (Advisory Only)"
           right={
-            <Pill tone={result.trust.score >= 85 ? "ok" : "warn"}>
-              {result.trust.score}/100 · {result.trust.band}
+            <Pill tone={final.trust.score >= 85 ? "ok" : "warn"}>
+              {final.trust.score}/100 · {final.trust.band}
             </Pill>
           }
         >
           <ul className="space-y-2">
-            {result.trust.signals.map((s) => (
+            {final.trust.signals.map((s) => (
               <li key={s.name} className="flex items-start gap-2.5 text-xs font-medium">
                 <span className={s.passed ? "text-ok font-bold" : "text-danger font-bold"}>{s.passed ? "✓" : "✕"}</span>
                 <div>
@@ -886,7 +966,7 @@ function ShopResult({
             ))}
           </ul>
           <p className="mt-3 rounded-xl border border-line bg-raised/50 p-3 text-2xs text-subtle font-medium">
-            {result.trust.advisory_note}
+            {final.trust.advisory_note}
           </p>
         </Card>
       )}

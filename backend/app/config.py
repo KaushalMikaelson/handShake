@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-5"
 
+    # --- Groq ---
+    groq_api_key: str = ""
+    groq_model: str = "openai/gpt-oss-20b"
+
     # --- Gemini ---
     gemini_api_key: str = ""
     gemini_model: str = "gemini-3.8-flash"
@@ -55,7 +59,7 @@ class Settings(BaseSettings):
 
     @property
     def llm_live_mode(self) -> bool:
-        return bool(self.gemini_api_key or self.anthropic_api_key)
+        return bool(self.groq_api_key or self.gemini_api_key or self.anthropic_api_key)
 
 
     @property
