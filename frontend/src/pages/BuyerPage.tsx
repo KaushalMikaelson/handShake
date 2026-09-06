@@ -246,12 +246,13 @@ export default function BuyerPage({ onChanged }: { onChanged?: () => void }) {
   }, [catalog, selectedCat, searchFilter]);
 
   const run = useCallback(
-    async (q: string) => {
+    async (q: string, runOpts?: { acceptBundle?: boolean }) => {
       setLoading(true);
       setError(null);
       setResult(null);
       try {
-        const r = await api.shop(q, { acceptBundle });
+        const isAccept = runOpts?.acceptBundle ?? acceptBundle;
+        const r = await api.shop(q, { acceptBundle: isAccept });
         setResult(r);
         await refresh();
         onChanged?.();
@@ -608,9 +609,25 @@ export default function BuyerPage({ onChanged }: { onChanged?: () => void }) {
               {SCRIPTS.map((s) => (
                 <button
                   key={s.label}
-                  onClick={() => {
+                  onClick={async () => {
                     setQuery(s.query);
-                    run(s.query);
+                    const shouldAcceptBundle = s.label.includes("Bundle");
+                    if (shouldAcceptBundle) {
+                      setAcceptBundle(true);
+                    }
+                    if (
+                      s.label.includes("Auto-purchase") &&
+                      state &&
+                      state.policy.autonomy_level !== "L3_BOUNDED_AUTO"
+                    ) {
+                      try {
+                        await api.updatePolicy({ autonomy_level: "L3_BOUNDED_AUTO" });
+                        await refresh();
+                      } catch {
+                        // ignore if policy update fails
+                      }
+                    }
+                    run(s.query, { acceptBundle: shouldAcceptBundle });
                   }}
                   disabled={loading}
                   className="group relative flex flex-col justify-between rounded-xl border border-line bg-surface p-3 text-left transition-all
@@ -810,6 +827,14 @@ function ShopResult({
                   <strong className="text-strong font-bold">{formatINR(rec.remaining_budget)}</strong>
                 </div>
               )}
+              {final.bundle?.offered && final.intent?.amount === final.bundle?.bundle_price && (
+                <div className="mt-3 flex items-center gap-2 rounded-lg border border-brand/30 bg-brand/10 px-3 py-2 text-xs font-semibold text-brand">
+                  <span>🎁</span>
+                  <span>
+                    Companion Bundle Attached: <strong>{final.bundle.items.find((i) => i.product_id !== rec.selected_product_id)?.name || "Companion Accessory"}</strong> for <strong>{formatINR(final.bundle.bundle_price)}</strong> ({final.bundle.discount_pct}% off applied to order).
+                  </span>
+                </div>
+              )}
             </div>
           )}
 
@@ -867,14 +892,50 @@ function ShopResult({
         >
           <p className="text-xs font-medium leading-relaxed text-body">{final.bundle.reasoning}</p>
           {final.bundle.offered && (
-            <div className="mt-3 flex items-center gap-3 rounded-xl border border-ok/30 bg-ok/10 p-3">
-              <span className="text-2xs font-bold text-subtle uppercase">Bundle Savings:</span>
-              <span className="font-mono text-xs text-subtle line-through">
-                {formatINR(final.bundle.list_price)}
-              </span>
-              <span className="font-mono text-sm font-bold text-ok">
-                {formatINR(final.bundle.bundle_price)}
-              </span>
+            <div className="mt-3 space-y-3">
+              {final.bundle.items && final.bundle.items.length > 0 && (
+                <div className="space-y-2 rounded-xl border border-line bg-raised/40 p-3">
+                  <span className="label text-2xs block mb-1">Items In Bundle ({final.bundle.items.length})</span>
+                  {final.bundle.items.map((item, idx) => (
+                    <div key={item.product_id || idx} className="flex items-center justify-between text-xs">
+                      <span className="font-medium text-strong flex items-center gap-1.5 truncate">
+                        <span className="text-subtle font-mono text-2xs uppercase">
+                          {idx === 0 ? "📦 Anchor:" : "🎁 Companion:"}
+                        </span>
+                        <span className="truncate">{item.name}</span>
+                      </span>
+                      <span className="shrink-0 font-mono font-semibold text-body ml-2">
+                        {formatINR(item.price)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-ok/30 bg-ok/10 p-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-2xs font-bold text-subtle uppercase">Bundle Price:</span>
+                  <span className="font-mono text-xs text-subtle line-through">
+                    {formatINR(final.bundle.list_price)}
+                  </span>
+                  <span className="font-mono text-sm font-bold text-ok">
+                    {formatINR(final.bundle.bundle_price)}
+                  </span>
+                  <span className="text-2xs font-bold text-ok bg-ok/20 px-1.5 py-0.5 rounded">
+                    {final.bundle.discount_pct}% OFF
+                  </span>
+                </div>
+                <div>
+                  {final.intent?.amount === final.bundle.bundle_price ? (
+                    <span className="inline-flex items-center gap-1 text-2xs font-bold text-ok">
+                      ✓ Bundle accepted & applied to order
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-2xs font-medium text-subtle">
+                      Bundle offered (single item purchased)
+                    </span>
+                  )}
+                </div>
+              </div>
             </div>
           )}
         </Card>
@@ -900,6 +961,16 @@ function ShopResult({
               />
               <Row k="Merchant Name" v={result.approval.context?.merchant?.name ?? "—"} />
             </dl>
+            {result.approval.context?.bundle?.offered && (
+              <div className="mt-3 rounded-lg border border-brand/30 bg-brand/10 p-2.5 text-xs text-brand">
+                <strong className="block mb-0.5 font-bold">🎁 Includes Merchant Companion Bundle:</strong>
+                <span>
+                  {result.approval.context.bundle.reasoning} — Total bundle price:{" "}
+                  <strong>{formatINR(result.approval.context.bundle.bundle_price)}</strong> (
+                  {result.approval.context.bundle.discount_pct}% off applied)
+                </span>
+              </div>
+            )}
           </div>
 
           {confirmReject ? (

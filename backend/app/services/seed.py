@@ -637,7 +637,7 @@ PRODUCTS = [
         category="accessories",
         attributes=["cleaning-kit", "keycap-puller", "brush", "spray-bottle", "microfiber"],
         bundle_eligible=True,
-        max_discount_pct=25,
+        max_discount_pct=20,
         companion_product_ids=[],
     ),
     dict(
@@ -659,7 +659,7 @@ PRODUCTS = [
         category="accessories",
         attributes=["screen-protector", "9h-tempered-glass", "anti-glare", "anti-fingerprint"],
         bundle_eligible=True,
-        max_discount_pct=25,
+        max_discount_pct=20,
         companion_product_ids=[],
     ),
     dict(
@@ -729,7 +729,7 @@ def sync_catalog(db: Session) -> None:
             id=MERCHANT_ID,
             name="AudioHub India",
             description="Audio & consumer tech gear merchant with an AI growth agent for bundling and upsell.",
-            max_discount_pct=15,
+            max_discount_pct=10,
             max_campaign_budget=5_000_000,  # Rs 50,000
             auto_approve_bundle_discount_below_pct=10,
             verified_catalog=True,
@@ -737,6 +737,9 @@ def sync_catalog(db: Session) -> None:
             failed_transactions=2,
         )
         db.add(merchant)
+        db.flush()
+    else:
+        merchant.max_discount_pct = 10
         db.flush()
 
     # Sync products

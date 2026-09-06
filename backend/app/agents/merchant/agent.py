@@ -25,8 +25,8 @@ BUNDLE_TOOL_SCHEMA = {
         "offer_bundle": {
             "type": "boolean",
             "description": (
-                "True only if the companion genuinely complements the purchase AND "
-                "fits the shopper's remaining budget. False if no sensible bundle exists."
+                "True if proposing a bundle with one of the approved companion products. "
+                "False only if none of the approved companions are a sensible pairing for the anchor product."
             ),
         },
         "companion_product_id": {
@@ -53,12 +53,13 @@ BUNDLE_TOOL_SCHEMA = {
 
 SYSTEM_PROMPT = (
     "You are a merchant's growth agent. Given a shopper's chosen product and a list of "
-    "merchant-approved companion products, propose at most one bundle that raises order "
-    "value while genuinely serving the shopper. "
-    "Decline (offer_bundle=false) when no companion is a real fit or the bundle would "
-    "not fit the shopper's remaining budget - a forced upsell is worse than none. "
-    "You propose discounts; you do not authorise them, and you never modify catalog "
-    "pricing. Never exceed the max_discount_pct you are given."
+    "merchant-approved companion products, propose a bundle that raises order value while "
+    "genuinely serving the shopper. "
+    "All listed companion products have already been verified to fit within the shopper's "
+    "total budget when bundled at their allowed discount. Do not decline on budget grounds. "
+    "Only decline (offer_bundle=false) if no companion is a relevant fit for the chosen product. "
+    "You propose discounts up to the stated max_discount_pct; you do not authorise them, "
+    "and you never modify catalog pricing."
 )
 
 
@@ -134,22 +135,28 @@ class MerchantGrowthAgent:
         if llm is not None:
             offer_bundle, companion_id, llm_discount, llm_reason, llm_mode = llm
             if not offer_bundle:
-                return BundleOffer(
-                    offered=False,
-                    reasoning=llm_reason
-                    or "The growth agent judged that no bundle suits this purchase.",
-                    llm_mode=llm_mode,
-                )
-            match = next((c for c in affordable if c.id == companion_id), None)
-            if match is not None:
-                companion = match
-                # The model's number is clamped here and re-checked by the
-                # Policy Engine; two independent bounds on the same value.
-                discount_pct = max(
-                    0, min(int(llm_discount), self._discount_ceiling(merchant, anchor, companion))
-                )
-                reasoning = llm_reason or reasoning
-                mode = llm_mode
+                # If the LLM mistakenly cited budget despite the companion having already been
+                # verified affordable, fall back to the deterministic companion proposal.
+                if "budget" in (llm_reason or "").lower():
+                    pass
+                else:
+                    return BundleOffer(
+                        offered=False,
+                        reasoning=llm_reason
+                        or "The growth agent judged that no bundle suits this purchase.",
+                        llm_mode=llm_mode,
+                    )
+            else:
+                match = next((c for c in affordable if c.id == companion_id), None)
+                if match is not None:
+                    companion = match
+                    # The model's number is clamped here and re-checked by the
+                    # Policy Engine; two independent bounds on the same value.
+                    discount_pct = max(
+                        0, min(int(llm_discount), self._discount_ceiling(merchant, anchor, companion))
+                    )
+                    reasoning = llm_reason or reasoning
+                    mode = llm_mode
 
 
         list_price = anchor.price + companion.price
@@ -219,15 +226,25 @@ class MerchantGrowthAgent:
             f"{self._discount_ceiling(merchant, anchor, c)}"
             for c in companions
         ]
+        total_budget_str = (
+            format_inr(anchor.price + remaining_budget)
+            if remaining_budget is not None
+            else "unconstrained"
+        )
+        headroom_str = (
+            format_inr(remaining_budget)
+            if remaining_budget is not None
+            else "unconstrained"
+        )
         prompt = (
-            f"Shopper is buying: {anchor.name} ({anchor.category}) at "
-            f"{format_inr(anchor.price)}.\n"
-            f"Shopper's remaining budget after this purchase: "
-            f"{format_inr(remaining_budget) if remaining_budget is not None else 'unknown'}.\n"
-            f"Your maximum authorised discount for this anchor: "
+            f"Shopper is buying: {anchor.name} ({anchor.category}) at {format_inr(anchor.price)}.\n"
+            f"Shopper's total budget: {total_budget_str} (headroom for companions: {headroom_str}).\n"
+            f"Authorised discount ceiling for this anchor: "
             f"{min(merchant.max_discount_pct, anchor.max_discount_pct)}%.\n\n"
-            f"Merchant-approved companion products:\n" + "\n".join(lines) + "\n\n"
-            "Propose at most one bundle, or decline."
+            f"Merchant-approved companion products (pre-verified to fit within budget):\n"
+            + "\n".join(lines)
+            + "\n\n"
+            "Propose the best companion product to bundle, or decline only if no companion is a relevant match."
         )
         result = client.structured_call(
             system=SYSTEM_PROMPT,
