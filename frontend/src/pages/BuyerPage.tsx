@@ -697,6 +697,7 @@ function ShopResult({
   const [deciding, setDeciding] = useState<"approve" | "reject" | null>(null);
   const [decided, setDecided] = useState<ShopResponse | null>(null);
   const [confirmReject, setConfirmReject] = useState(false);
+  const [candidatesOpen, setCandidatesOpen] = useState(false);
 
   async function decide(d: "approve" | "reject") {
     if (!result.approval) return;
@@ -838,43 +839,86 @@ function ShopResult({
             </div>
           )}
 
-          <span className="label block mb-2.5">Every Candidate Evaluated</span>
-          <ul className="space-y-2">
-            {rec.candidates.map((c) => {
-              const isSelected = c.product_id === rec.selected_product_id;
-              return (
-                <li
-                  key={c.product_id}
-                  className={`flex items-start gap-3 rounded-xl border p-3 transition-all ${
-                    isSelected
-                      ? "border-brand bg-brand/5 ring-1 ring-brand/30"
-                      : c.eligible
-                      ? "border-line bg-surface"
-                      : "border-line/60 bg-raised/30 opacity-75"
+          {/* Every Candidate Evaluated Dropdown */}
+          <div className="mt-4 border-t border-line/60 pt-4">
+            <button
+              type="button"
+              id="candidates-dropdown-toggle"
+              onClick={() => setCandidatesOpen((prev) => !prev)}
+              aria-expanded={candidatesOpen}
+              className="flex w-full items-center justify-between rounded-xl border border-line bg-surface/80 p-3.5 text-left transition-all hover:border-brand/40 hover:bg-raised/50"
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="label text-2xs mb-0 text-strong font-bold uppercase tracking-wider">
+                  Every Candidate Evaluated
+                </span>
+                <span className="inline-flex items-center rounded-md border border-line bg-raised px-2 py-0.5 font-mono text-2xs font-semibold text-subtle">
+                  {rec.candidates.length} SKUs evaluated
+                </span>
+                <span className="inline-flex items-center rounded-md border border-ok/30 bg-ok/10 px-2 py-0.5 text-2xs font-semibold text-ok">
+                  {rec.candidates.filter((c) => c.eligible).length} eligible
+                </span>
+                <span className="inline-flex items-center rounded-md border border-danger/30 bg-danger/10 px-2 py-0.5 text-2xs font-semibold text-danger">
+                  {rec.candidates.filter((c) => !c.eligible).length} disqualified
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-2xs font-medium text-subtle hidden sm:inline">
+                  {candidatesOpen ? "Collapse candidates" : "Click to view candidates"}
+                </span>
+                <span
+                  className={`inline-block transform font-mono text-xs font-bold text-brand transition-transform duration-200 ${
+                    candidatesOpen ? "rotate-180" : ""
                   }`}
                 >
-                  <span
-                    className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-extrabold ${
-                      c.eligible ? "bg-ok text-white" : "bg-danger text-white"
-                    }`}
-                  >
-                    {c.eligible ? "✓" : "✕"}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-xs font-bold text-strong">{c.name}</span>
-                      <span className="shrink-0 font-mono text-xs font-bold text-strong">
-                        {formatINR(c.price)}
+                  ▼
+                </span>
+              </div>
+            </button>
+
+            {candidatesOpen && (
+              <ul className="mt-3 space-y-2 animate-fade-down">
+                {rec.candidates.map((c) => {
+                  const isSelected = c.product_id === rec.selected_product_id;
+                  return (
+                    <li
+                      key={c.product_id}
+                      className={`flex items-start gap-3 rounded-xl border p-3 transition-all ${
+                        isSelected
+                          ? "border-brand bg-brand/5 ring-1 ring-brand/30"
+                          : c.eligible
+                          ? "border-line bg-surface"
+                          : "border-line/60 bg-raised/30 opacity-75"
+                      }`}
+                    >
+                      <span
+                        className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-xs font-extrabold ${
+                          c.eligible ? "bg-ok text-white" : "bg-danger text-white"
+                        }`}
+                      >
+                        {c.eligible ? "✓" : "✕"}
                       </span>
-                    </div>
-                    <p className={`mt-1 text-2xs font-medium ${c.eligible ? "text-subtle" : "text-danger font-semibold"}`}>
-                      {c.eligible ? c.reasons.join(" · ") : c.rejection_reason}
-                    </p>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate text-xs font-bold text-strong">{c.name}</span>
+                          <span className="shrink-0 font-mono text-xs font-bold text-strong">
+                            {formatINR(c.price)}
+                          </span>
+                        </div>
+                        <p
+                          className={`mt-1 text-2xs font-medium ${
+                            c.eligible ? "text-subtle" : "text-danger font-semibold"
+                          }`}
+                        >
+                          {c.eligible ? c.reasons.join(" · ") : c.rejection_reason}
+                        </p>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </div>
         </Card>
       )}
 
